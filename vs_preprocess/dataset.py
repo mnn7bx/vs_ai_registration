@@ -166,7 +166,7 @@ def discover_scans(
             )
 
     records.sort(key=lambda r: (r.modality, r.patient_id, r.timepoint))
-    logger.info("Discovered %d scans across %d directories", len(records), len(records))
+    logger.info("Discovered %d scans", len(records))
     return records
 
 
@@ -261,24 +261,30 @@ def discover_scans_from_csv(
         if allowed_mod is not None and modality.lower() not in allowed_mod:
             continue
 
-        patient_id = str(int(row["Reworked Patient ID"]))
-        timepoint = str(row["Timepoint"]).strip()
+        raw_pid = row.get("Reworked Patient ID")
+        if pd.isna(raw_pid):
+            logger.warning("Missing 'Reworked Patient ID' — skipping row")
+            continue
+        try:
+            patient_id = str(int(float(raw_pid)))
+        except (ValueError, TypeError):
+            logger.warning("Non-numeric 'Reworked Patient ID' %r — skipping row", raw_pid)
+            continue
+        raw_tp = row.get("Timepoint")
+        if pd.isna(raw_tp):
+            logger.warning("Missing Timepoint for patient %s — skipping", patient_id)
+            continue
+        timepoint = str(raw_tp).strip()
         patient_timepoint = f"{patient_id}_{timepoint}"
 
         # Resolve image path: prefer coregistered_image (what's on disk)
-        img_col = str(row.get("coregistered_image", "")).strip()
-        if not img_col:
-            img_col = str(row.get("image path", "")).strip()
+        img_col = str(row.get("coregistered_image", "")).strip() or \
+                  str(row.get("image path", "")).strip()
         if not img_col:
             logger.warning("No image path for %s — skipping", patient_timepoint)
             continue
 
         volume_path = data_root / img_col
-        if not volume_path.exists():
-            # Try raw_studies relative path from CSV
-            alt = str(row.get("image path", "")).strip()
-            if alt:
-                volume_path = data_root / alt
         if not volume_path.exists():
             logger.warning("Image not found: %s — skipping", volume_path)
             continue
@@ -293,6 +299,8 @@ def discover_scans_from_csv(
             candidate = data_root / seg_col
             if candidate.exists():
                 seg_path = candidate
+            else:
+                logger.debug("Seg path not found (will be None): %s", candidate)
 
         records.append(
             ScanRecord(
