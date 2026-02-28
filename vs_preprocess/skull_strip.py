@@ -31,35 +31,42 @@ def extract_brain_mask(
         mode: "accurate" (5-model ensemble) or "fast" (single model).
         dilation_voxels: voxels to dilate. 2 adds margin for IAC.
     """
-    from HD_BET.run import run_hd_bet
+    import torch
+    from HD_BET.hd_bet_prediction import get_hdbet_predictor, hdbet_predict
 
     output_mask_path.parent.mkdir(parents=True, exist_ok=True)
 
-    with tempfile.TemporaryDirectory(prefix="hdbet_") as tmpdir:
-        tmp_out = str(Path(tmpdir) / "brain")
+    torch_device = torch.device("cpu" if device == "cpu" else "cuda")
+    use_tta = mode == "accurate"
 
-        run_hd_bet(
-            mri_fnames=[str(input_path)],
-            output_fnames=[tmp_out],
-            mode=mode,
-            device=device if device != "cpu" else "cpu",
-            postprocess=True,
-            do_tta=(mode == "accurate"),
-            keep_mask=True,
-            overwrite=True,
+    predictor = get_hdbet_predictor(use_tta=use_tta, device=torch_device)
+
+    with tempfile.TemporaryDirectory(prefix="hdbet_") as tmpdir:
+        # hdbet_predict requires a full .nii.gz output filename when given a
+        # single file as input; the mask is written as <stem>_bet.nii.gz
+        tmp_out = str(Path(tmpdir) / "brain.nii.gz")
+
+        hdbet_predict(
+            input_file_or_folder=str(input_path),
+            output_file_or_folder=tmp_out,
+            predictor=predictor,
+            keep_brain_mask=True,
+            compute_brain_extracted_image=False,
         )
 
-        # HD-BET writes brain_mask.nii.gz — find it
-        tmpdir_path = Path(tmpdir)
-        mask_candidates = list(tmpdir_path.glob("*mask*"))
-        if not mask_candidates:
-            contents = list(tmpdir_path.iterdir())
-            raise FileNotFoundError(
-                f"HD-BET did not produce a mask file. "
-                f"Temp dir contents: {[p.name for p in contents]}"
-            )
+        # HD-BET 2.x writes the mask as <output_stem>_bet.nii.gz
+        mask_path = Path(tmpdir) / "brain_bet.nii.gz"
+        if not mask_path.exists():
+            # Fall back to glob in case naming changes in a future patch
+            mask_candidates = list(Path(tmpdir).glob("*bet*.nii.gz"))
+            if not mask_candidates:
+                contents = list(Path(tmpdir).iterdir())
+                raise FileNotFoundError(
+                    f"HD-BET did not produce a mask file. "
+                    f"Temp dir contents: {[p.name for p in contents]}"
+                )
+            mask_path = mask_candidates[0]
 
-        mask_path = mask_candidates[0]
         mask_nii = nib.load(str(mask_path))
         mask_data = mask_nii.get_fdata().astype(bool)
 
