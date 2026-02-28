@@ -112,11 +112,17 @@ def decompose_affine(affine: np.ndarray) -> dict:
     M = affine[:3, :3].astype(np.float64)
     t = affine[:3, 3].astype(np.float64)
 
-    U, sigma, Vt = np.linalg.svd(M)
-    R = U @ Vt
+    # Scale: column norms preserve axis order (sx, sy, sz), unlike SVD singular
+    # values which are sorted in descending order.
+    scale = np.linalg.norm(M, axis=0)  # shape (3,), axis-ordered
+
+    # Rotation: normalise columns of M to unit length, then extract angles
+    scale_safe = np.where(scale > 1e-10, scale, 1.0)
+    R = M / scale_safe[np.newaxis, :]  # each column divided by its norm
+
+    # Ensure proper rotation (det == +1)
     if np.linalg.det(R) < 0:
-        U[:, -1] *= -1
-        R = U @ Vt
+        R[:, -1] *= -1
 
     ry = np.arcsin(np.clip(-R[2, 0], -1.0, 1.0))
     cos_ry = np.cos(ry)
@@ -130,7 +136,7 @@ def decompose_affine(affine: np.ndarray) -> dict:
     return {
         "rotation_deg": [float(np.degrees(rx)), float(np.degrees(ry)), float(np.degrees(rz))],
         "translation": [float(t[0]), float(t[1]), float(t[2])],
-        "scale": [float(sigma[0]), float(sigma[1]), float(sigma[2])],
+        "scale": [float(scale[0]), float(scale[1]), float(scale[2])],
         "determinant": float(np.linalg.det(M)),
     }
 
