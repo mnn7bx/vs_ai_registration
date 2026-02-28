@@ -1,0 +1,41 @@
+# Intra-patient longitudinal alignment model configuration
+
+image_size: [96, 96, 96]
+transform_type: affine
+
+# Data
+real_ratio: 0.5
+synthetic_length_per_epoch: 1000
+max_rotation_deg: 15.0
+max_translation: 0.1
+max_scale_offset: 0.05
+
+# Training
+batch_size: 8
+num_workers: 4
+max_epochs: 300
+lr: 1.0e-4
+scheduler_T0: 50
+scheduler_Tmult: 2
+grad_clip_norm: 1.0
+
+# Loss weights
+similarity_loss: mi
+mi_num_bins: 32
+lambda_sim: 1.0
+lambda_identity: 0.01
+lambda_det: 0.1
+lambda_supervised: 0.5
+
+# Warm-up (epochs)
+warmup_start: 0
+warmup_mi_start: 10
+warmup_mi_end: 30
+
+# Early stopping
+patience: 30
+val_fraction: 0.2
+split_seed: 42
+
+# Logging
+checkpoint_every_n_epochs: 10
