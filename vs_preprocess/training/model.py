@@ -57,6 +57,9 @@ class AffineRegNet(nn.Module):
         self.transform_type = transform_type
         self.num_params = 9 if transform_type == "affine" else 6
         self.image_size = image_size
+        self.in_channels = in_channels
+        self.num_channel_initial = num_channel_initial
+        self.depth = depth
 
         self.backbone = GlobalNet(
             image_size=image_size,
@@ -99,9 +102,9 @@ class AffineRegNet(nn.Module):
     def get_config(self) -> dict:
         return {
             "image_size": list(self.image_size),
-            "in_channels": 2,
-            "num_channel_initial": 16,
-            "depth": 4,
+            "in_channels": self.in_channels,
+            "num_channel_initial": self.num_channel_initial,
+            "depth": self.depth,
             "transform_type": self.transform_type,
             "num_params": self.num_params,
         }
