@@ -128,25 +128,25 @@ def process_patient_group(
         bias_path = inter_dir / f"{record.patient_timepoint}_bias_field.nii.gz"
 
         t0 = time.perf_counter()
-        if config.get("no_n4", False):
-            shutil.copy2(str(record.volume_path), str(n4_path))
-        else:
-            try:
+        try:
+            if config.get("no_n4", False):
+                shutil.copy2(str(record.volume_path), str(n4_path))
+            else:
                 run_n4_correction(
                     record.volume_path,
                     n4_path,
                     bias_field_path=bias_path if config.get("keep_intermediates", True) else None,
                 )
-            except Exception as e:
-                logger.error("N4 failed for %s: %s", record.patient_timepoint, e)
-                all_results.append(
-                    ProcessingResult(
-                        patient_timepoint=record.patient_timepoint,
-                        success=False,
-                        error=f"N4: {e}",
-                    )
+        except Exception as e:
+            logger.error("N4 failed for %s: %s", record.patient_timepoint, e)
+            all_results.append(
+                ProcessingResult(
+                    patient_timepoint=record.patient_timepoint,
+                    success=False,
+                    error=f"N4: {e}",
                 )
-                continue
+            )
+            continue
         timings.n4 = time.perf_counter() - t0
         n4_paths[record.timepoint] = n4_path
         logger.debug("  N4 %s: %.1fs", record.patient_timepoint, timings.n4)
