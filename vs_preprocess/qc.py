@@ -45,9 +45,9 @@ def generate_scan_qc(
     fig, axes = plt.subplots(1, 3, figsize=(12, 4), dpi=100, facecolor="black")
     for ax, (name, vol_slice, mask_slice, seg_slice) in zip(axes, slices_info):
         ax.imshow(vol_slice, cmap="gray", aspect="equal")
-        if mask_slice.max() > 0:
+        if mask_slice.size > 0 and mask_slice.max() > 0:
             ax.contour(mask_slice, levels=[0.5], colors=["red"], linewidths=0.8)
-        if seg_slice is not None and seg_slice.max() > 0:
+        if seg_slice is not None and seg_slice.size > 0 and seg_slice.max() > 0:
             ax.contour(seg_slice, levels=[0.5], colors=["lime"], linewidths=1.0)
         ax.set_title(name, fontsize=10, color="white")
         ax.axis("off")
@@ -120,9 +120,9 @@ def generate_longitudinal_qc(
             diff = axial - base_vol[:, :, base_z].T
             vmax = max(np.percentile(np.abs(diff), 99), 1e-6)
             axes[1, i].imshow(diff, cmap="RdBu_r", vmin=-vmax, vmax=vmax, aspect="equal")
-            p = td["params_dict"]
-            r = p["rotation_deg"]
-            t = p["translation"]
+            p = td.get("params_dict") or {}
+            r = p.get("rotation_deg", [0.0, 0.0, 0.0])
+            t = p.get("translation", [0.0, 0.0, 0.0])
             axes[1, i].set_title(
                 f"rot=({r[0]:.1f}, {r[1]:.1f}, {r[2]:.1f})\n"
                 f"trans=({t[0]:.2f}, {t[1]:.2f}, {t[2]:.2f})",
@@ -158,7 +158,10 @@ def generate_qc_summary_html(
     sections = []
     for group_key in sorted(patient_results.keys()):
         info = patient_results[group_key]
-        modality, patient_id = group_key.split("/", 1)
+        parts = group_key.split("/", 1)
+        if len(parts) != 2:
+            continue
+        modality, patient_id = parts
 
         # Longitudinal QC
         long_qc = output_dir / modality / patient_id / f"{patient_id}_longitudinal_qc.png"
@@ -218,5 +221,6 @@ def generate_qc_summary_html(
 </body>
 </html>"""
 
+    output_dir.mkdir(parents=True, exist_ok=True)
     html_path.write_text(html)
     logger.info("QC summary HTML: %s", html_path)
