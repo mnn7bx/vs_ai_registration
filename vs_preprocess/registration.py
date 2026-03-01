@@ -6,12 +6,16 @@ from __future__ import annotations
 
 import json
 import logging
+import sys
 import numpy as np
 import nibabel as nib
 import torch
 import torch.nn as nn
 from pathlib import Path
 from typing import Dict, List, Tuple
+
+# Ensure vs_preprocess/ is importable as a flat package
+sys.path.insert(0, str(Path(__file__).resolve().parent))
 
 from affine_utils import (
     compose_affine,
@@ -39,6 +43,9 @@ def load_model(model_path: Path, device: str = "cuda"):
     """
     # Import here to avoid circular import at module level
     from training.model import AffineRegNet
+
+    if not model_path.exists():
+        raise FileNotFoundError(f"Model checkpoint not found: {model_path}")
 
     checkpoint = torch.load(str(model_path), map_location=device, weights_only=False)
     config = checkpoint["config"]
@@ -103,7 +110,7 @@ def predict_affine(
             raw_params = raw_params[:, :num_params]
             affine = compose_affine(raw_params, transform_type=transform_type)
 
-    affine_np = affine[0].cpu().numpy()
+    affine_np = affine[0].cpu().numpy().astype(np.float64)
     params_np = raw_params[0].cpu().numpy()
     params_dict = decompose_affine(affine_np)
 
