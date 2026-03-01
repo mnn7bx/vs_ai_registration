@@ -26,7 +26,7 @@ def parse_args(argv=None):
     p.add_argument("--transform_type", default="affine", choices=["affine", "rigid"],
                     help="Transform DOF: affine (9) or rigid (6)")
 
-    # Template registration (optional)
+    # Template registration arguments — reserved for future release (not yet wired to pipeline.py)
     p.add_argument("--register_to_template", action="store_true",
                     help="Enable secondary template registration")
     p.add_argument("--template_model_path", type=Path, default=None,
@@ -35,8 +35,6 @@ def parse_args(argv=None):
                     help="Template NIfTI image (e.g., MNI152)")
     p.add_argument("--template_mask_path", type=Path, default=None,
                     help="Template brain mask NIfTI")
-
-    # Brain mask
     p.add_argument("--mask_method", default="hdbet", choices=["hdbet", "template_warp"],
                     help="Brain mask method")
 

@@ -5,6 +5,7 @@ Pipeline orchestration: per-patient processing, failure logging, timing.
 from __future__ import annotations
 
 import csv
+import json
 import logging
 import shutil
 import time
@@ -121,7 +122,9 @@ def process_patient_group(
         if config.get("keep_intermediates", True):
             inter_dir.mkdir(parents=True, exist_ok=True)
         else:
-            inter_dir = out_dir  # save alongside final outputs
+            # N4 volumes are always retained (required by alignment/normalization stages).
+            # When keep_intermediates=False, only bias field files are suppressed.
+            inter_dir = out_dir
             inter_dir.mkdir(parents=True, exist_ok=True)
 
         n4_path = inter_dir / f"{record.patient_timepoint}_n4.nii.gz"
@@ -353,7 +356,6 @@ def process_patient_group(
                 if not fvol.exists():
                     continue
 
-                import json
                 params_dict = {"rotation_deg": [0, 0, 0], "translation": [0, 0, 0]}
                 if pjson.exists():
                     with open(pjson) as f:
