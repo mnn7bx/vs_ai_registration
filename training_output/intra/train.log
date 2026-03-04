@@ -1,0 +1,108 @@
+<frozen importlib._bootstrap_external>:1325: FutureWarning: The cuda.cudart module is deprecated and will be removed in a future release, please switch to use the cuda.bindings.runtime module instead.
+2026-03-01 14:55:42,319 INFO Device: cpu
+2026-03-01 14:55:42,341 WARNING Image not found: /home/kwa/Documents/nan — skipping
+2026-03-01 14:55:42,341 WARNING Image not found: /home/kwa/Documents/nan — skipping
+2026-03-01 14:55:42,342 WARNING Image not found: /home/kwa/Documents/nan — skipping
+2026-03-01 14:55:42,343 WARNING Image not found: /home/kwa/Documents/nan — skipping
+2026-03-01 14:55:42,343 WARNING Image not found: /home/kwa/Documents/nan — skipping
+2026-03-01 14:55:42,345 WARNING Image not found: /home/kwa/Documents/nan — skipping
+2026-03-01 14:55:42,345 WARNING Image not found: /home/kwa/Documents/nan — skipping
+2026-03-01 14:55:42,345 WARNING Image not found: /home/kwa/Documents/nan — skipping
+2026-03-01 14:55:42,347 WARNING Image not found: /home/kwa/Documents/nan — skipping
+2026-03-01 14:55:42,347 WARNING Image not found: /home/kwa/Documents/nan — skipping
+2026-03-01 14:55:42,350 WARNING Image not found: /home/kwa/Documents/nan — skipping
+2026-03-01 14:55:42,352 WARNING Image not found: /home/kwa/Documents/nan — skipping
+2026-03-01 14:55:42,352 WARNING Image not found: /home/kwa/Documents/nan — skipping
+2026-03-01 14:55:42,352 WARNING Image not found: /home/kwa/Documents/nan — skipping
+2026-03-01 14:55:42,352 WARNING Image not found: /home/kwa/Documents/nan — skipping
+2026-03-01 14:55:42,352 WARNING Image not found: /home/kwa/Documents/nan — skipping
+2026-03-01 14:55:42,352 WARNING Image not found: /home/kwa/Documents/nan — skipping
+2026-03-01 14:55:42,352 WARNING Image not found: /home/kwa/Documents/nan — skipping
+2026-03-01 14:55:42,352 WARNING Image not found: /home/kwa/Documents/nan — skipping
+2026-03-01 14:55:42,353 WARNING Image not found: /home/kwa/Documents/nan — skipping
+2026-03-01 14:55:42,353 WARNING Image not found: /home/kwa/Documents/nan — skipping
+2026-03-01 14:55:42,356 WARNING Image not found: /home/kwa/Documents/nan — skipping
+2026-03-01 14:55:42,356 WARNING Image not found: /home/kwa/Documents/nan — skipping
+2026-03-01 14:55:42,356 WARNING Image not found: /home/kwa/Documents/nan — skipping
+2026-03-01 14:55:42,360 WARNING Image not found: /home/kwa/Documents/nan — skipping
+2026-03-01 14:55:42,360 WARNING Image not found: /home/kwa/Documents/nan — skipping
+2026-03-01 14:55:42,360 WARNING Image not found: /home/kwa/Documents/nan — skipping
+2026-03-01 14:55:42,365 WARNING Image not found: /home/kwa/Documents/nan — skipping
+2026-03-01 14:55:42,368 WARNING Image not found: /home/kwa/Documents/nan — skipping
+2026-03-01 14:55:42,368 WARNING Image not found: /home/kwa/Documents/nan — skipping
+2026-03-01 14:55:42,368 WARNING Image not found: /home/kwa/Documents/nan — skipping
+2026-03-01 14:55:42,369 WARNING Image not found: /home/kwa/Documents/nan — skipping
+2026-03-01 14:55:42,369 WARNING Image not found: /home/kwa/Documents/nan — skipping
+2026-03-01 14:55:42,369 WARNING Image not found: /home/kwa/Documents/nan — skipping
+2026-03-01 14:55:42,369 WARNING Image not found: /home/kwa/Documents/nan — skipping
+2026-03-01 14:55:42,370 WARNING Image not found: /home/kwa/Documents/nan — skipping
+2026-03-01 14:55:42,371 WARNING Image not found: /home/kwa/Documents/nan — skipping
+2026-03-01 14:55:42,372 WARNING Image not found: /home/kwa/Documents/nan — skipping
+2026-03-01 14:55:42,372 WARNING Image not found: /home/kwa/Documents/nan — skipping
+2026-03-01 14:55:42,372 WARNING Image not found: /home/kwa/Documents/nan — skipping
+2026-03-01 14:55:42,372 WARNING Image not found: /home/kwa/Documents/nan — skipping
+2026-03-01 14:55:42,372 WARNING Image not found: /home/kwa/Documents/nan — skipping
+2026-03-01 14:55:42,374 WARNING Image not found: /home/kwa/Documents/nan — skipping
+2026-03-01 14:55:42,374 WARNING Image not found: /home/kwa/Documents/nan — skipping
+2026-03-01 14:55:42,374 WARNING Image not found: /home/kwa/Documents/nan — skipping
+2026-03-01 14:55:42,379 WARNING Image not found: /home/kwa/Documents/nan — skipping
+2026-03-01 14:55:42,379 WARNING Image not found: /home/kwa/Documents/nan — skipping
+2026-03-01 14:55:42,379 WARNING Image not found: /home/kwa/Documents/nan — skipping
+2026-03-01 14:55:42,383 WARNING Image not found: /home/kwa/Documents/nan — skipping
+2026-03-01 14:55:42,384 WARNING Image not found: /home/kwa/Documents/nan — skipping
+2026-03-01 14:55:42,384 WARNING Image not found: /home/kwa/Documents/nan — skipping
+2026-03-01 14:55:42,384 WARNING Image not found: /home/kwa/Documents/nan — skipping
+2026-03-01 14:55:42,384 WARNING Image not found: /home/kwa/Documents/nan — skipping
+2026-03-01 14:55:42,384 WARNING Image not found: /home/kwa/Documents/nan — skipping
+2026-03-01 14:55:42,384 WARNING Image not found: /home/kwa/Documents/nan — skipping
+2026-03-01 14:55:42,389 INFO CSV: discovered 1548 scans for 187 patient-timepoints
+2026-03-01 14:55:42,389 INFO Grouped into 635 patient-modality groups (total 1548 scans)
+2026-03-01 14:55:42,390 INFO Train: 508 groups (1247 scans), Val: 127 groups (301 scans)
+2026-03-01 14:55:42,426 INFO Model params: 6390537
+/home/kwa/miniconda3/lib/python3.13/site-packages/torch/utils/data/dataloader.py:1118: UserWarning: 'pin_memory' argument is set as true but no accelerator is found, then device pinned memory won't be used.
+  super().__init__(loader)
+2026-03-01 15:20:53,940 INFO Epoch 1/300 — train=0.2015 val=-0.1821 lr=9.99e-05 lam_mi=0.00
+2026-03-01 15:20:53,964 INFO   New best model saved (val=-0.1821)
+2026-03-01 15:44:09,123 INFO Epoch 2/300 — train=0.0239 val=-0.2710 lr=9.96e-05 lam_mi=0.00
+2026-03-01 15:44:09,136 INFO   New best model saved (val=-0.2710)
+2026-03-01 16:07:37,510 INFO Epoch 3/300 — train=0.0368 val=0.0927 lr=9.91e-05 lam_mi=0.00
+2026-03-01 16:27:16,654 INFO Epoch 4/300 — train=0.0137 val=-0.2270 lr=9.84e-05 lam_mi=0.00
+2026-03-01 16:46:59,095 INFO Epoch 5/300 — train=0.0249 val=-0.2692 lr=9.76e-05 lam_mi=0.00
+2026-03-01 17:06:48,505 INFO Epoch 6/300 — train=0.0130 val=-0.2958 lr=9.65e-05 lam_mi=0.00
+2026-03-01 17:06:48,519 INFO   New best model saved (val=-0.2958)
+2026-03-01 17:26:28,153 INFO Epoch 7/300 — train=0.0133 val=-0.2618 lr=9.52e-05 lam_mi=0.00
+2026-03-01 17:45:54,589 INFO Epoch 8/300 — train=0.0191 val=-0.2736 lr=9.38e-05 lam_mi=0.00
+2026-03-01 18:05:36,270 INFO Epoch 9/300 — train=0.0143 val=-0.3246 lr=9.22e-05 lam_mi=0.00
+2026-03-01 18:05:36,282 INFO   New best model saved (val=-0.3246)
+2026-03-01 18:25:24,112 INFO Epoch 10/300 — train=0.0141 val=-0.3258 lr=9.05e-05 lam_mi=0.00
+2026-03-01 18:25:24,125 INFO   New best model saved (val=-0.3258)
+2026-03-01 18:44:53,884 INFO Epoch 11/300 — train=0.0080 val=-0.3093 lr=8.85e-05 lam_mi=0.00
+2026-03-01 19:20:21,183 INFO Epoch 12/300 — train=-0.0005 val=-0.3169 lr=8.64e-05 lam_mi=0.05
+2026-03-01 19:55:43,616 INFO Epoch 13/300 — train=-0.0015 val=-0.3283 lr=8.42e-05 lam_mi=0.10
+2026-03-01 19:55:43,632 INFO   New best model saved (val=-0.3283)
+2026-03-01 20:30:38,864 INFO Epoch 14/300 — train=-0.0265 val=-0.3315 lr=8.19e-05 lam_mi=0.15
+2026-03-01 20:30:38,876 INFO   New best model saved (val=-0.3315)
+2026-03-01 21:05:47,467 INFO Epoch 15/300 — train=-0.0340 val=-0.3404 lr=7.94e-05 lam_mi=0.20
+2026-03-01 21:05:47,481 INFO   New best model saved (val=-0.3404)
+2026-03-01 21:41:02,380 INFO Epoch 16/300 — train=-0.0689 val=-0.3972 lr=7.68e-05 lam_mi=0.25
+2026-03-01 21:41:02,394 INFO   New best model saved (val=-0.3972)
+2026-03-01 22:16:07,673 INFO Epoch 17/300 — train=-0.0952 val=-0.3298 lr=7.41e-05 lam_mi=0.30
+2026-03-01 22:51:03,376 INFO Epoch 18/300 — train=-0.1173 val=-0.3696 lr=7.13e-05 lam_mi=0.35
+2026-03-01 23:26:01,824 INFO Epoch 19/300 — train=-0.1171 val=-0.3893 lr=6.84e-05 lam_mi=0.40
+2026-03-02 00:01:06,733 INFO Epoch 20/300 — train=-0.1644 val=-0.3292 lr=6.55e-05 lam_mi=0.45
+2026-03-02 00:36:03,261 INFO Epoch 21/300 — train=-0.1883 val=-0.3960 lr=6.24e-05 lam_mi=0.50
+2026-03-02 01:11:03,703 INFO Epoch 22/300 — train=-0.1839 val=-0.1625 lr=5.94e-05 lam_mi=0.55
+2026-03-02 01:46:18,437 INFO Epoch 23/300 — train=-0.1931 val=-0.4437 lr=5.63e-05 lam_mi=0.60
+2026-03-02 01:46:18,453 INFO   New best model saved (val=-0.4437)
+2026-03-02 02:21:23,404 INFO Epoch 24/300 — train=-0.2525 val=-0.2944 lr=5.31e-05 lam_mi=0.65
+2026-03-02 02:56:32,686 INFO Epoch 25/300 — train=-0.2787 val=-0.3240 lr=5.00e-05 lam_mi=0.70
+2026-03-02 03:31:17,110 INFO Epoch 26/300 — train=-0.2705 val=-0.4425 lr=4.69e-05 lam_mi=0.75
+2026-03-02 04:06:33,171 INFO Epoch 27/300 — train=-0.3320 val=-0.3549 lr=4.37e-05 lam_mi=0.80
+2026-03-02 04:41:27,745 INFO Epoch 28/300 — train=-0.3524 val=-0.1868 lr=4.06e-05 lam_mi=0.85
+2026-03-02 05:16:24,879 INFO Epoch 29/300 — train=-0.3776 val=-0.3383 lr=3.76e-05 lam_mi=0.90
+2026-03-02 05:51:24,430 INFO Epoch 30/300 — train=-0.4022 val=-0.2901 lr=3.45e-05 lam_mi=0.95
+2026-03-02 06:26:34,608 INFO Epoch 31/300 — train=-0.4357 val=-0.3931 lr=3.16e-05 lam_mi=1.00
+2026-03-02 07:01:37,664 INFO Epoch 32/300 — train=-0.4275 val=-0.4123 lr=2.87e-05 lam_mi=1.00
+2026-03-02 07:36:44,461 INFO Epoch 33/300 — train=-0.4240 val=-0.3824 lr=2.59e-05 lam_mi=1.00
+2026-03-02 08:11:58,287 INFO Epoch 34/300 — train=-0.4426 val=-0.3908 lr=2.32e-05 lam_mi=1.00
+2026-03-02 08:47:09,325 INFO Epoch 35/300 — train=-0.4483 val=-0.3768 lr=2.06e-05 lam_mi=1.00
