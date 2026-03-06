@@ -1,7 +1,12 @@
 """Organize raw VS dataset into discover_scans()-compatible structure."""
 from __future__ import annotations
 
+import argparse
+import logging
 from pathlib import Path
+
+logging.basicConfig(level=logging.INFO, format="%(levelname)s: %(message)s")
+log = logging.getLogger(__name__)
 
 
 def parse_vs_folder_name(folder_name: str) -> dict:
@@ -74,3 +79,68 @@ def organize_scan(raw_scan_dir: Path, modality: str, output_dir: Path) -> Path |
             seg_link.symlink_to(classified["seg"].resolve())
 
     return out_dir
+
+
+def organize_all(raw_root: Path, output_dir: Path, modalities: list[str] | None = None):
+    """Organize all scans under raw_root into discovery-compatible layout.
+
+    raw_root structure:
+        raw_root/<modality>/<patient>_<timepoint>_<days>/*.nii.gz
+
+    Args:
+        raw_root: Path to unprocessed_raw_studies/
+        output_dir: Where to create organized symlink tree
+        modalities: If set, only process these modality dirs
+    """
+    available = sorted(p.name for p in raw_root.iterdir() if p.is_dir())
+    to_process = modalities if modalities else available
+    log.info("Modalities to process: %s", to_process)
+
+    stats = {"organized": 0, "skipped_empty": 0, "errors": 0}
+    for modality in to_process:
+        mod_dir = raw_root / modality
+        if not mod_dir.is_dir():
+            log.warning("Modality dir not found: %s", mod_dir)
+            continue
+        for scan_dir in sorted(mod_dir.iterdir()):
+            if not scan_dir.is_dir():
+                continue
+            try:
+                result = organize_scan(scan_dir, modality, output_dir)
+                if result is None:
+                    stats["skipped_empty"] += 1
+                else:
+                    stats["organized"] += 1
+            except (ValueError, OSError) as e:
+                log.warning("Skipping %s/%s: %s", modality, scan_dir.name, e)
+                stats["errors"] += 1
+
+    log.info(
+        "Done: %d organized, %d skipped (empty), %d errors",
+        stats["organized"], stats["skipped_empty"], stats["errors"],
+    )
+    return stats
+
+
+def main():
+    parser = argparse.ArgumentParser(
+        description="Organize raw VS dataset for discover_scans()"
+    )
+    parser.add_argument(
+        "--raw_dir", type=Path, required=True,
+        help="Path to unprocessed_raw_studies/",
+    )
+    parser.add_argument(
+        "--output_dir", type=Path, required=True,
+        help="Output directory for organized symlink tree",
+    )
+    parser.add_argument(
+        "--modalities", nargs="+", default=None,
+        help="Only process these modalities (default: all)",
+    )
+    args = parser.parse_args()
+    organize_all(args.raw_dir, args.output_dir, args.modalities)
+
+
+if __name__ == "__main__":
+    main()
