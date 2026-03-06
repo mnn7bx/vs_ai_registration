@@ -12,6 +12,7 @@ from __future__ import annotations
 
 import argparse
 import logging
+import random
 import sys
 from pathlib import Path
 
@@ -67,6 +68,22 @@ def compute_lambda_mi(epoch, warmup_start, warmup_mi_start, warmup_mi_end, lambd
         return lambda_sim * frac
     else:
         return lambda_sim
+
+
+def compute_lambda_sup(epoch, cfg):
+    """Compute supervised loss weight with optional linear decay to 0."""
+    base = cfg.get("lambda_supervised", 0.5)
+    if not cfg.get("lambda_supervised_decay", False):
+        return base
+    start = cfg.get("lambda_sup_decay_start", 30)
+    end = cfg.get("lambda_sup_decay_end", 60)
+    if epoch < start:
+        return base
+    elif epoch >= end:
+        return 0.0
+    else:
+        frac = (epoch - start) / max(end - start, 1)
+        return base * (1.0 - frac)
 
 
 def train(args):
@@ -151,6 +168,8 @@ def train(args):
     model = AffineRegNet(
         image_size=target_size,
         transform_type=transform_type,
+        head_hidden=cfg.get("head_hidden", 0),
+        head_dropout=cfg.get("head_dropout", 0.0),
     ).to(device)
     logger.info("Model params: %d", sum(p.numel() for p in model.parameters()))
 
@@ -158,15 +177,25 @@ def train(args):
     sim_loss_fn = get_similarity_loss(
         cfg.get("similarity_loss", "mi"),
         num_bins=cfg.get("mi_num_bins", 32),
+        kernel_size=cfg.get("ncc_kernel_size", 9),
     )
 
-    # Optimizer
+    # Optimizer & scheduler
     optimizer = torch.optim.Adam(model.parameters(), lr=cfg.get("lr", 1e-4))
-    scheduler = torch.optim.lr_scheduler.CosineAnnealingWarmRestarts(
-        optimizer,
-        T_0=cfg.get("scheduler_T0", 50),
-        T_mult=cfg.get("scheduler_Tmult", 2),
-    )
+    scheduler_type = cfg.get("scheduler", "cosine_restart")
+    if scheduler_type == "plateau":
+        scheduler = torch.optim.lr_scheduler.ReduceLROnPlateau(
+            optimizer,
+            mode="min",
+            factor=cfg.get("plateau_factor", 0.5),
+            patience=cfg.get("plateau_patience", 10),
+        )
+    else:
+        scheduler = torch.optim.lr_scheduler.CosineAnnealingWarmRestarts(
+            optimizer,
+            T_0=cfg.get("scheduler_T0", 50),
+            T_mult=cfg.get("scheduler_Tmult", 2),
+        )
 
     # Logging
     writer = SummaryWriter(str(output_dir / "tb_logs"))
@@ -179,7 +208,6 @@ def train(args):
 
     lambda_id = cfg.get("lambda_identity", 0.01)
     lambda_det = cfg.get("lambda_det", 0.1)
-    lambda_sup = cfg.get("lambda_supervised", 0.5)
     lambda_sim_max = cfg.get("lambda_sim", 1.0)
     warmup_start = cfg.get("warmup_start", 0)
     warmup_mi_start = cfg.get("warmup_mi_start", 10)
@@ -194,6 +222,7 @@ def train(args):
         n_batches = 0
 
         lam_mi = compute_lambda_mi(epoch, warmup_start, warmup_mi_start, warmup_mi_end, lambda_sim_max)
+        lambda_sup = compute_lambda_sup(epoch, cfg)
 
         for batch in train_loader:
             moving = batch["moving"].to(device)  # (B, 1, D, H, W)
@@ -233,10 +262,15 @@ def train(args):
             epoch_sup += loss_sup_val.item()
             n_batches += 1
 
-        scheduler.step()
         avg_loss = epoch_loss / max(n_batches, 1)
 
-        # Validation
+        # Validation (with optional deterministic seeding)
+        val_seed = cfg.get("val_seed")
+        if val_seed is not None:
+            random.seed(val_seed)
+            np.random.seed(val_seed)
+            torch.manual_seed(val_seed)
+
         model.eval()
         val_loss_total = 0.0
         val_sup_total = 0.0
@@ -267,6 +301,19 @@ def train(args):
 
         avg_val_loss = val_loss_total / max(val_n, 1)
 
+        # Re-seed randomly after val to not affect training
+        if val_seed is not None:
+            reseed = int(torch.empty((), dtype=torch.int64).random_().item()) % (2**31)
+            random.seed(reseed)
+            np.random.seed(reseed)
+            torch.manual_seed(reseed)
+
+        # Step scheduler
+        if scheduler_type == "plateau":
+            scheduler.step(avg_val_loss)
+        else:
+            scheduler.step()
+
         # Logging
         writer.add_scalar("train/loss", avg_loss, epoch)
         writer.add_scalar("train/sim", epoch_sim / max(n_batches, 1), epoch)
@@ -275,11 +322,12 @@ def train(args):
         writer.add_scalar("val/sup", val_sup_total / max(val_n, 1), epoch)
         writer.add_scalar("lr", optimizer.param_groups[0]["lr"], epoch)
         writer.add_scalar("lambda_mi", lam_mi, epoch)
+        writer.add_scalar("lambda_sup", lambda_sup, epoch)
 
         logger.info(
-            "Epoch %d/%d — train=%.4f val=%.4f lr=%.2e lam_mi=%.2f",
+            "Epoch %d/%d — train=%.4f val=%.4f lr=%.2e lam_mi=%.2f lam_sup=%.2f",
             epoch + 1, max_epochs, avg_loss, avg_val_loss,
-            optimizer.param_groups[0]["lr"], lam_mi,
+            optimizer.param_groups[0]["lr"], lam_mi, lambda_sup,
         )
 
         # Checkpointing

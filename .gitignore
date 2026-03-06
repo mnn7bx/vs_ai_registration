@@ -1,0 +1,7 @@
+data/
+training_output/
+__pycache__/
+*.pyc
+*.egg-info/
+*.tar.gz
+=7.0

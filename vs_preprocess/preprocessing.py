@@ -264,6 +264,15 @@ def preprocess_for_network(
     from scipy.ndimage import zoom
 
     nii = nib.load(str(input_path))
+
+    # Handle 4D volumes (e.g. multi-echo): take first volume before reorienting
+    if nii.ndim == 4:
+        data_4d = nii.get_fdata(dtype=np.float32)
+        nii = nib.Nifti1Image(data_4d[..., 0], nii.affine[:4, :4], nii.header)
+
+    if nii.ndim != 3:
+        raise ValueError(f"Expected 3D volume, got shape {nii.shape}: {input_path}")
+
     nii = nib.as_closest_canonical(nii)  # reorient to RAS
     data = nii.get_fdata(dtype=np.float32)
 

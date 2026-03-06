@@ -20,20 +20,31 @@ class _DecomposedHead(nn.Module):
     """
     Replacement for MONAI's AffineHead.
     Receives the list of decoded feature maps from GlobalNet.forward,
-    flattens the bottom-most one, and projects to num_params via a linear
-    layer initialized to zero -> identity transform at init.
+    flattens the bottom-most one, and projects to num_params via an MLP
+    initialized so the output is zero -> identity transform at init.
     """
 
-    def __init__(self, in_features: int, num_params: int):
+    def __init__(self, in_features: int, num_params: int, hidden: int = 0, dropout: float = 0.0):
         super().__init__()
-        self.fc = nn.Linear(in_features, num_params)
-        nn.init.zeros_(self.fc.weight)
-        nn.init.zeros_(self.fc.bias)
+        if hidden > 0:
+            self.net = nn.Sequential(
+                nn.Linear(in_features, hidden),
+                nn.ReLU(inplace=True),
+                nn.Dropout(dropout),
+                nn.Linear(hidden, num_params),
+            )
+            # Zero-init final layer for identity at init
+            nn.init.zeros_(self.net[-1].weight)
+            nn.init.zeros_(self.net[-1].bias)
+        else:
+            self.net = nn.Linear(in_features, num_params)
+            nn.init.zeros_(self.net.weight)
+            nn.init.zeros_(self.net.bias)
 
     def forward(self, x, image_size=None):
         # x is a list of tensors; x[0] is the bottom-most decoded feature map
         feat = x[0]
-        return self.fc(feat.reshape(feat.shape[0], -1))
+        return self.net(feat.reshape(feat.shape[0], -1))
 
 
 class AffineRegNet(nn.Module):
@@ -52,6 +63,8 @@ class AffineRegNet(nn.Module):
         num_channel_initial=16,
         depth=4,
         transform_type="affine",
+        head_hidden=0,
+        head_dropout=0.0,
     ):
         super().__init__()
         self.transform_type = transform_type
@@ -60,6 +73,8 @@ class AffineRegNet(nn.Module):
         self.in_channels = in_channels
         self.num_channel_initial = num_channel_initial
         self.depth = depth
+        self.head_hidden = head_hidden
+        self.head_dropout = head_dropout
 
         self.backbone = GlobalNet(
             image_size=image_size,
@@ -74,7 +89,9 @@ class AffineRegNet(nn.Module):
         # which comes from bottom_block output; its in_features matches
         # the existing AffineHead's fc in_features.
         in_features = self.backbone.output_block.fc.in_features
-        self.backbone.output_block = _DecomposedHead(in_features, self.num_params)
+        self.backbone.output_block = _DecomposedHead(
+            in_features, self.num_params, hidden=head_hidden, dropout=head_dropout,
+        )
 
     def forward(self, x: torch.Tensor):
         """
@@ -107,4 +124,6 @@ class AffineRegNet(nn.Module):
             "depth": self.depth,
             "transform_type": self.transform_type,
             "num_params": self.num_params,
+            "head_hidden": self.head_hidden,
+            "head_dropout": self.head_dropout,
         }

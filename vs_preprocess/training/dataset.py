@@ -50,8 +50,15 @@ class LongitudinalPairDataset(Dataset):
 
     def __getitem__(self, idx):
         moving_path, fixed_path = self.pairs[idx]
-        moving = preprocess_for_network(moving_path, self.target_size).squeeze(0)  # (1,D,H,W)
-        fixed = preprocess_for_network(fixed_path, self.target_size).squeeze(0)
+        try:
+            moving = preprocess_for_network(moving_path, self.target_size).squeeze(0)  # (1,D,H,W)
+            fixed = preprocess_for_network(fixed_path, self.target_size).squeeze(0)
+        except (ValueError, Exception) as e:
+            # Skip bad scans (e.g. localizers) by returning a random valid sample
+            alt = random.randint(0, len(self.pairs) - 1)
+            if alt == idx:
+                alt = (idx + 1) % len(self.pairs)
+            return self.__getitem__(alt)
         return {
             "moving": moving,
             "fixed": fixed,
@@ -94,7 +101,10 @@ class SyntheticPairDataset(Dataset):
 
     def __getitem__(self, idx):
         path = random.choice(self.scan_paths)
-        fixed = preprocess_for_network(path, self.target_size).squeeze(0)  # (1,D,H,W)
+        try:
+            fixed = preprocess_for_network(path, self.target_size).squeeze(0)  # (1,D,H,W)
+        except (ValueError, Exception):
+            return self.__getitem__(idx)  # retry with another random scan
 
         # Sample random params (the affine we APPLY to fixed -> create moving)
         fwd_params = self._sample_params()

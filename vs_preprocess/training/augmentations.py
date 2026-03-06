@@ -40,7 +40,7 @@ def apply_intensity_augmentation(
         vol = vol + torch.randn_like(vol) * std
 
     if np.random.random() < p:
-        small = torch.rand(1, 1, 8, 8, 8) * 0.2 + 0.9
+        small = torch.rand(1, 1, 8, 8, 8, device=vol.device) * 0.2 + 0.9
         bias = F.interpolate(small, size=vol.shape[1:], mode="trilinear", align_corners=True)
         vol = vol * bias.squeeze(0)
 
