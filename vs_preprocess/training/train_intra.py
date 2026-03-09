@@ -98,14 +98,16 @@ def train(args):
     logger.info("Device: %s", device)
 
     # Discover and group
+    modality_filter = cfg.get("modalities", None)
     if args.csv_path:
         from dataset import discover_scans_from_csv
         records = discover_scans_from_csv(
             Path(args.csv_path),
             Path(args.data_root) if args.data_root else Path(args.data_dir).parent,
+            modalities=modality_filter,
         )
     else:
-        records = discover_scans(Path(args.data_dir))
+        records = discover_scans(Path(args.data_dir), modalities=modality_filter)
     groups = group_by_patient(records)
     train_groups, val_groups = split_by_patient(
         groups,
@@ -120,12 +122,14 @@ def train(args):
 
     # Datasets
     target_size = tuple(cfg.get("image_size", [96, 96, 96]))
+    target_spacing = tuple(cfg.get("target_spacing", [1.0, 1.0, 1.0]))
     transform_type = cfg.get("transform_type", "affine")
 
-    train_real = LongitudinalPairDataset(train_groups, target_size)
+    train_real = LongitudinalPairDataset(train_groups, target_size, target_spacing)
     train_synthetic = SyntheticPairDataset(
         scan_paths=get_all_scan_paths(train_groups),
         target_size=target_size,
+        target_spacing=target_spacing,
         max_rotation_deg=cfg.get("max_rotation_deg", 15.0),
         max_translation=cfg.get("max_translation", 0.1),
         max_scale_offset=cfg.get("max_scale_offset", 0.05),
@@ -136,10 +140,11 @@ def train(args):
         train_real, train_synthetic, real_ratio=cfg.get("real_ratio", 0.5)
     )
 
-    val_real = LongitudinalPairDataset(val_groups, target_size)
+    val_real = LongitudinalPairDataset(val_groups, target_size, target_spacing)
     val_synthetic = SyntheticPairDataset(
         scan_paths=get_all_scan_paths(val_groups),
         target_size=target_size,
+        target_spacing=target_spacing,
         max_rotation_deg=cfg.get("max_rotation_deg", 15.0),
         max_translation=cfg.get("max_translation", 0.1),
         max_scale_offset=cfg.get("max_scale_offset", 0.05),

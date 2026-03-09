@@ -1,0 +1,55 @@
+# VS intra-patient alignment — THICK modalities (anisotropic)
+
+modalities: ["t1+_thick_ax", "t1+_thick_cor", "t2_thick"]
+
+image_size: [128, 128, 128]
+target_spacing: [1.0, 1.0, 1.0]
+transform_type: affine
+
+# Data
+real_ratio: 0.5
+synthetic_length_per_epoch: 1000
+max_rotation_deg: 15.0
+max_translation: 0.1
+max_scale_offset: 0.05
+
+# Training
+batch_size: 4
+num_workers: 4
+max_epochs: 200
+lr: 1.0e-4
+grad_clip_norm: 1.0
+
+# Scheduler — cosine with warm restarts
+scheduler: cosine_restart
+scheduler_T0: 50
+scheduler_Tmult: 2
+
+# Model head
+head_hidden: 512
+head_dropout: 0.1
+
+# Loss weights
+similarity_loss: ncc
+ncc_kernel_size: 9
+lambda_sim: 1.0
+lambda_identity: 0.001
+lambda_det: 0.1
+lambda_supervised: 1.0
+
+# Supervised decay
+lambda_supervised_decay: true
+lambda_sup_decay_start: 10
+lambda_sup_decay_end: 30
+
+# NCC warm-up
+warmup_start: 0
+warmup_mi_start: 0
+warmup_mi_end: 10
+
+# Early stopping
+patience: 40
+val_fraction: 0.2
+split_seed: 42
+val_seed: 123
+checkpoint_every_n_epochs: 10
