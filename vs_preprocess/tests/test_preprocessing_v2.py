@@ -216,3 +216,31 @@ class TestSyntheticPairDatasetV2:
         assert sample["moving"].shape == (1, 128, 128, 128)
         assert sample["fixed"].shape == (1, 128, 128, 128)
         assert sample["has_gt"].item() is True
+
+
+class TestTrainingIntegrationV2:
+    """Smoke test: full forward pass with v2 preprocessing."""
+
+    def test_training_forward_pass(self, tmp_path):
+        """Model forward pass works with v2-preprocessed data from different geometries."""
+        from vs_preprocess.training.model import AffineRegNet
+        from vs_preprocess.preprocessing import preprocess_for_network_v2
+
+        # Create two fake NIfTIs with different geometry
+        for name, shape, spacing in [
+            ("fixed", (200, 200, 200), (0.8, 0.8, 0.8)),
+            ("moving", (256, 256, 30), (0.5, 0.5, 5.0)),
+        ]:
+            data = np.random.rand(*shape).astype(np.float32) * 100
+            nib.save(nib.Nifti1Image(data, np.diag([*spacing, 1.0])), str(tmp_path / f"{name}.nii.gz"))
+
+        fixed, _ = preprocess_for_network_v2(tmp_path / "fixed.nii.gz")
+        moving, _ = preprocess_for_network_v2(tmp_path / "moving.nii.gz")
+
+        x = torch.cat([moving, fixed], dim=1)  # (1, 2, 128, 128, 128)
+        model = AffineRegNet(image_size=(128, 128, 128))
+        model.eval()
+        with torch.no_grad():
+            params, affine = model(x)
+        assert params.shape == (1, 9)
+        assert affine.shape == (1, 3, 4)
