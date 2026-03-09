@@ -19,24 +19,32 @@ from torch.utils.data import Dataset
 
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 from affine_utils import compose_affine, decompose_affine, warp_volume_torch, extend_to_4x4
-from preprocessing import preprocess_for_network
+from preprocessing import (
+    preprocess_for_network,
+    preprocess_for_network_v2,
+    load_and_resample_isotropic,
+    center_crop_or_pad,
+    compute_overlap_center,
+)
 from dataset import ScanRecord
 
 
 class LongitudinalPairDataset(Dataset):
     """
     Yields (moving, fixed) pairs from real longitudinal data.
-    For each patient with N timepoints, generates N-1 pairs:
-        (tp2, tp1), (tp3, tp1), ..., (tpN, tp1)
+    Uses FOV-aware cropping: both volumes are cropped centered on their
+    overlapping physical region so the 128^3 windows contain the same anatomy.
     """
 
     def __init__(
         self,
         patient_groups: Dict[str, List[ScanRecord]],
-        target_size=(96, 96, 96),
+        target_size=(128, 128, 128),
+        target_spacing=(1.0, 1.0, 1.0),
     ):
         self.pairs: List[tuple] = []
         self.target_size = target_size
+        self.target_spacing = target_spacing
 
         for group_key, records in patient_groups.items():
             if len(records) < 2:
@@ -51,19 +59,50 @@ class LongitudinalPairDataset(Dataset):
     def __getitem__(self, idx):
         moving_path, fixed_path = self.pairs[idx]
         try:
-            moving = preprocess_for_network(moving_path, self.target_size).squeeze(0)  # (1,D,H,W)
-            fixed = preprocess_for_network(fixed_path, self.target_size).squeeze(0)
+            # Step 1: Load and resample both to isotropic (no crop yet)
+            mov_data, mov_affine = load_and_resample_isotropic(moving_path, self.target_spacing)
+            fix_data, fix_affine = load_and_resample_isotropic(fixed_path, self.target_spacing)
+
+            # Step 2: Compute overlapping region center (in fixed-volume voxel coords)
+            overlap_center_fix = compute_overlap_center(
+                fix_affine, fix_data.shape, mov_affine, mov_data.shape
+            )
+
+            # Convert overlap center to moving-volume voxel coords
+            center_world = fix_affine[:3, :3] @ np.array(overlap_center_fix, dtype=np.float64) + fix_affine[:3, 3]
+            inv_mov = np.linalg.inv(mov_affine)
+            overlap_center_mov = inv_mov[:3, :3] @ center_world + inv_mov[:3, 3]
+            overlap_center_mov = tuple(int(round(v)) for v in overlap_center_mov)
+            overlap_center_mov = tuple(max(0, min(c, s - 1)) for c, s in zip(overlap_center_mov, mov_data.shape))
+
+            # Step 3: Crop both centered on the overlap
+            fix_cropped, _ = center_crop_or_pad(fix_data, self.target_size, center=overlap_center_fix)
+            mov_cropped, _ = center_crop_or_pad(mov_data, self.target_size, center=overlap_center_mov)
+
+            # Step 4: Intensity normalize each to [0, 1]
+            def _normalize(arr):
+                vmin, vmax = arr.min(), arr.max()
+                if vmax - vmin > 1e-8:
+                    return (arr - vmin) / (vmax - vmin)
+                return np.zeros_like(arr)
+
+            mov_cropped = _normalize(mov_cropped)
+            fix_cropped = _normalize(fix_cropped)
+
+            moving = torch.from_numpy(mov_cropped).float().unsqueeze(0)  # (1,D,H,W)
+            fixed = torch.from_numpy(fix_cropped).float().unsqueeze(0)
+
         except (ValueError, Exception) as e:
-            # Skip bad scans (e.g. localizers) by returning a random valid sample
-            alt = random.randint(0, len(self.pairs) - 1)
+            alt = random.randint(0, max(len(self.pairs) - 1, 0))
             if alt == idx:
                 alt = (idx + 1) % len(self.pairs)
             return self.__getitem__(alt)
+
         return {
             "moving": moving,
             "fixed": fixed,
             "has_gt": torch.tensor(False),
-            "gt_params": torch.zeros(9),  # placeholder, unused
+            "gt_params": torch.zeros(9),
         }
 
 
@@ -80,7 +119,8 @@ class SyntheticPairDataset(Dataset):
     def __init__(
         self,
         scan_paths: List[Path],
-        target_size=(96, 96, 96),
+        target_size=(128, 128, 128),
+        target_spacing=(1.0, 1.0, 1.0),
         max_rotation_deg: float = 15.0,
         max_translation: float = 0.1,
         max_scale_offset: float = 0.05,
@@ -89,6 +129,7 @@ class SyntheticPairDataset(Dataset):
     ):
         self.scan_paths = scan_paths
         self.target_size = target_size
+        self.target_spacing = target_spacing
         self.max_rotation = np.radians(max_rotation_deg)
         self.max_translation = max_translation
         self.max_scale_offset = max_scale_offset
@@ -102,7 +143,8 @@ class SyntheticPairDataset(Dataset):
     def __getitem__(self, idx):
         path = random.choice(self.scan_paths)
         try:
-            fixed = preprocess_for_network(path, self.target_size).squeeze(0)  # (1,D,H,W)
+            fixed, _ = preprocess_for_network_v2(path, self.target_size, self.target_spacing)
+            fixed = fixed.squeeze(0)  # (1,D,H,W)
         except (ValueError, Exception):
             return self.__getitem__(idx)  # retry with another random scan
 

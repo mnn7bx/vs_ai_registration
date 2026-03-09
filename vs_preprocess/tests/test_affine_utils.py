@@ -157,3 +157,25 @@ class TestWarpVolumeTorch:
         identity = torch.eye(3, 4).unsqueeze(0)
         warped = warp_volume_torch(vol, identity)
         assert torch.allclose(vol, warped, atol=1e-4)
+
+
+class TestNormalizedAffineToWorldV2:
+    def test_identity_roundtrip(self):
+        from vs_preprocess.affine_utils import normalized_affine_to_world_v2
+        identity_3x4 = np.eye(3, 4)
+        crop_affine = np.diag([1.0, 1.0, 1.0, 1.0])
+        result = normalized_affine_to_world_v2(
+            identity_3x4, crop_affine, crop_affine, net_input_shape=(128, 128, 128)
+        )
+        np.testing.assert_allclose(result, np.eye(4), atol=1e-6)
+
+    def test_shifted_crop(self):
+        from vs_preprocess.affine_utils import normalized_affine_to_world_v2
+        identity_3x4 = np.eye(3, 4)
+        crop_moving = np.diag([1.0, 1.0, 1.0, 1.0])
+        crop_moving[:3, 3] = [10.0, 0.0, 0.0]
+        crop_fixed = np.diag([1.0, 1.0, 1.0, 1.0])
+        result = normalized_affine_to_world_v2(
+            identity_3x4, crop_moving, crop_fixed, net_input_shape=(128, 128, 128)
+        )
+        assert abs(result[0, 3] - 10.0) < 1e-4

@@ -1,5 +1,6 @@
 """Tests for v2 preprocessing functions (spacing-aware)."""
 
+import random
 import numpy as np
 import nibabel as nib
 import pytest
@@ -10,6 +11,8 @@ from pathlib import Path
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 
 from preprocessing import center_crop_or_pad, load_and_resample_isotropic, preprocess_for_network_v2, compute_overlap_center
+from vs_preprocess.training.dataset import LongitudinalPairDataset, SyntheticPairDataset
+from vs_preprocess.dataset import ScanRecord
 
 
 class TestCenterCropOrPad:
@@ -147,3 +150,69 @@ class TestComputeOverlapCenter:
         shape_b = (80, 80, 80)
         center = compute_overlap_center(affine_a, shape_a, affine_b, shape_b)
         assert center == (90, 90, 90)
+
+
+class TestLongitudinalPairDatasetV2:
+    def test_output_shape_128(self, tmp_path):
+        # Create two NIfTIs
+        for name in ["baseline", "followup"]:
+            data = np.random.rand(64, 64, 64).astype(np.float32) * 100
+            nib.save(nib.Nifti1Image(data, np.diag([1.0, 1.0, 1.0, 1.0])), str(tmp_path / f"{name}.nii.gz"))
+
+        baseline = ScanRecord(
+            modality="t1", patient_timepoint="P1_tp1", patient_id="P1",
+            timepoint="tp1", volume_path=tmp_path / "baseline.nii.gz",
+            seg_path=None, is_baseline=True,
+        )
+        followup = ScanRecord(
+            modality="t1", patient_timepoint="P1_tp2", patient_id="P1",
+            timepoint="tp2", volume_path=tmp_path / "followup.nii.gz",
+            seg_path=None,
+        )
+        groups = {"t1/P1": [baseline, followup]}
+        ds = LongitudinalPairDataset(groups, target_size=(128, 128, 128))
+        sample = ds[0]
+        assert sample["moving"].shape == (1, 128, 128, 128)
+        assert sample["fixed"].shape == (1, 128, 128, 128)
+
+    def test_mixed_geometry(self, tmp_path):
+        # Thick axial: 256x256x30 at 0.5x0.5x5mm
+        data_thick = np.random.rand(256, 256, 30).astype(np.float32) * 100
+        nib.save(nib.Nifti1Image(data_thick, np.diag([0.5, 0.5, 5.0, 1.0])), str(tmp_path / "thick.nii.gz"))
+
+        # Thin: 256x256x256 at 0.5x0.5x0.5mm
+        data_thin = np.random.rand(256, 256, 256).astype(np.float32) * 100
+        nib.save(nib.Nifti1Image(data_thin, np.diag([0.5, 0.5, 0.5, 1.0])), str(tmp_path / "thin.nii.gz"))
+
+        baseline = ScanRecord(
+            modality="t1", patient_timepoint="P1_tp1", patient_id="P1",
+            timepoint="tp1", volume_path=tmp_path / "thin.nii.gz",
+            seg_path=None, is_baseline=True,
+        )
+        followup = ScanRecord(
+            modality="t1", patient_timepoint="P1_tp2", patient_id="P1",
+            timepoint="tp2", volume_path=tmp_path / "thick.nii.gz",
+            seg_path=None,
+        )
+        groups = {"t1/P1": [baseline, followup]}
+        ds = LongitudinalPairDataset(groups, target_size=(128, 128, 128))
+        sample = ds[0]
+        assert sample["moving"].shape == (1, 128, 128, 128)
+        assert sample["fixed"].shape == (1, 128, 128, 128)
+        assert sample["moving"].min() >= 0.0
+        assert sample["moving"].max() <= 1.0 + 1e-6
+
+
+class TestSyntheticPairDatasetV2:
+    def test_output_shape(self, tmp_path):
+        data = np.random.rand(200, 200, 200).astype(np.float32) * 100
+        nib.save(nib.Nifti1Image(data, np.diag([0.8, 0.8, 0.8, 1.0])), str(tmp_path / "scan.nii.gz"))
+        ds = SyntheticPairDataset(
+            scan_paths=[tmp_path / "scan.nii.gz"],
+            target_size=(128, 128, 128),
+            length=2,
+        )
+        sample = ds[0]
+        assert sample["moving"].shape == (1, 128, 128, 128)
+        assert sample["fixed"].shape == (1, 128, 128, 128)
+        assert sample["has_gt"].item() is True

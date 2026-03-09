@@ -267,6 +267,37 @@ def normalized_affine_to_world(
     return chain
 
 
+def normalized_affine_to_world_v2(
+    affine_norm_3x4: np.ndarray,
+    crop_affine_moving: np.ndarray,
+    crop_affine_fixed: np.ndarray,
+    net_input_shape: Tuple[int, int, int] = (128, 128, 128),
+) -> np.ndarray:
+    """
+    Convert normalized-coordinate affine to world-space affine (v2, crop-aware).
+
+    Same coordinate chain as normalized_affine_to_world, but uses precomputed
+    crop_affine matrices instead of computing from original nii images.
+
+    Args:
+        affine_norm_3x4: (3,4) predicted affine (moving_norm -> fixed_norm).
+        crop_affine_moving: (4,4) voxel-to-world for the moving crop grid.
+        crop_affine_fixed: (4,4) voxel-to-world for the fixed crop grid.
+        net_input_shape: spatial dims of the network input.
+
+    Returns:
+        (4,4) world-space affine: fixed_world -> moving_world.
+    """
+    aff_4x4 = extend_to_4x4(affine_norm_3x4)
+    inv_aff = np.linalg.inv(aff_4x4)
+
+    V2N = _voxel_to_normalized(net_input_shape)
+    N2V = _normalized_to_voxel(net_input_shape)
+
+    chain = crop_affine_moving @ N2V @ inv_aff @ V2N @ np.linalg.inv(crop_affine_fixed)
+    return chain
+
+
 # ═══════════════════════════════════════════════════════════════════════════
 # VOLUME WARPING — INFERENCE (numpy/SimpleITK, non-differentiable)
 # ═══════════════════════════════════════════════════════════════════════════
