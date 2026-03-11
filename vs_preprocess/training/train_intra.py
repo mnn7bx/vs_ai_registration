@@ -202,12 +202,35 @@ def train(args):
             T_mult=cfg.get("scheduler_Tmult", 2),
         )
 
+    # ── Resume from checkpoint ───────────────────────────
+    start_epoch = 0
+    best_val_loss = float("inf")
+    patience_counter = 0
+    if args.resume:
+        ckpt_path = Path(args.resume)
+        if not ckpt_path.exists():
+            raise FileNotFoundError(f"Resume checkpoint not found: {ckpt_path}")
+        ckpt = torch.load(str(ckpt_path), map_location=device, weights_only=False)
+        model.load_state_dict(ckpt["model_state_dict"])
+        if "optimizer_state_dict" in ckpt:
+            optimizer.load_state_dict(ckpt["optimizer_state_dict"])
+        if "scheduler_state_dict" in ckpt:
+            try:
+                scheduler.load_state_dict(ckpt["scheduler_state_dict"])
+            except (ValueError, KeyError):
+                logger.warning("Scheduler state incompatible, starting fresh scheduler")
+        start_epoch = ckpt["epoch"] + 1
+        best_val_loss = ckpt["val_loss"]
+        patience_counter = ckpt.get("patience_counter", 0)
+        logger.info(
+            "Resumed from %s (epoch %d, best_val=%.4f, patience=%d)",
+            ckpt_path, ckpt["epoch"], best_val_loss, patience_counter,
+        )
+
     # Logging
     writer = SummaryWriter(str(output_dir / "tb_logs"))
 
     # Training
-    best_val_loss = float("inf")
-    patience_counter = 0
     max_epochs = cfg.get("max_epochs", 300)
     patience = cfg.get("patience", 30)
 
@@ -219,7 +242,7 @@ def train(args):
     warmup_mi_end = cfg.get("warmup_mi_end", 30)
     grad_clip = cfg.get("grad_clip_norm", 1.0)
 
-    for epoch in range(max_epochs):
+    for epoch in range(start_epoch, max_epochs):
         model.train()
         epoch_loss = 0.0
         epoch_sim = 0.0
@@ -400,6 +423,7 @@ def main():
     parser.add_argument("--output_dir", type=str, required=True)
     parser.add_argument("--csv_path", type=str, default=None, help="CSV file path for data loading")
     parser.add_argument("--data_root", type=str, default=None, help="Data root for CSV path resolution")
+    parser.add_argument("--resume", type=str, default=None, help="Path to checkpoint to resume from")
     args = parser.parse_args()
     train(args)
 
