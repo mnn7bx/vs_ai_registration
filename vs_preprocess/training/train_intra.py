@@ -247,6 +247,7 @@ def train(args):
         epoch_loss = 0.0
         epoch_sim = 0.0
         epoch_sup = 0.0
+        epoch_grad_norm = 0.0
         n_batches = 0
 
         lam_mi = compute_lambda_mi(epoch, warmup_start, warmup_mi_start, warmup_mi_end, lambda_sim_max)
@@ -282,7 +283,8 @@ def train(args):
 
             optimizer.zero_grad()
             loss.backward()
-            torch.nn.utils.clip_grad_norm_(model.parameters(), max_norm=grad_clip)
+            grad_norm = torch.nn.utils.clip_grad_norm_(model.parameters(), max_norm=grad_clip)
+            epoch_grad_norm += grad_norm.item()
             optimizer.step()
 
             epoch_loss += loss.item()
@@ -351,6 +353,13 @@ def train(args):
         writer.add_scalar("lr", optimizer.param_groups[0]["lr"], epoch)
         writer.add_scalar("lambda_mi", lam_mi, epoch)
         writer.add_scalar("lambda_sup", lambda_sup, epoch)
+        avg_grad_norm = epoch_grad_norm / max(n_batches, 1)
+        writer.add_scalar("train/grad_norm", avg_grad_norm, epoch)
+        if avg_grad_norm < 1e-7:
+            logger.warning(
+                "Epoch %d: gradient norm near zero (%.2e) — model may be stuck",
+                epoch + 1, avg_grad_norm,
+            )
 
         logger.info(
             "Epoch %d/%d — train=%.4f val=%.4f lr=%.2e lam_mi=%.2f lam_sup=%.2f",
