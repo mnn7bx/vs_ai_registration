@@ -195,7 +195,13 @@ def train(args):
             factor=cfg.get("plateau_factor", 0.5),
             patience=cfg.get("plateau_patience", 10),
         )
-    else:
+    elif scheduler_type == "cosine":
+        scheduler = torch.optim.lr_scheduler.CosineAnnealingLR(
+            optimizer,
+            T_max=cfg.get("scheduler_T_max", cfg.get("max_epochs", 200)),
+            eta_min=cfg.get("scheduler_eta_min", 1e-7),
+        )
+    else:  # cosine_restart
         scheduler = torch.optim.lr_scheduler.CosineAnnealingWarmRestarts(
             optimizer,
             T_0=cfg.get("scheduler_T0", 50),

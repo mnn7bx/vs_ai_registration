@@ -18,10 +18,10 @@ max_epochs: 200
 lr: 1.0e-4
 grad_clip_norm: 1.0
 
-# Scheduler — cosine with warm restarts
-scheduler: cosine_restart
-scheduler_T0: 50
-scheduler_Tmult: 2
+# Scheduler
+scheduler: plateau
+plateau_factor: 0.5
+plateau_patience: 10
 
 # Model head
 head_hidden: 512
