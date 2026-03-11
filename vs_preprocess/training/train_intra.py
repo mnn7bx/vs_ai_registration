@@ -342,9 +342,12 @@ def train(args):
             torch.save(
                 {
                     "model_state_dict": model.state_dict(),
+                    "optimizer_state_dict": optimizer.state_dict(),
+                    "scheduler_state_dict": scheduler.state_dict(),
                     "config": model.get_config(),
                     "epoch": epoch,
                     "val_loss": best_val_loss,
+                    "patience_counter": patience_counter,
                 },
                 str(output_dir / "best_model.pth"),
             )
@@ -361,9 +364,12 @@ def train(args):
             torch.save(
                 {
                     "model_state_dict": model.state_dict(),
+                    "optimizer_state_dict": optimizer.state_dict(),
+                    "scheduler_state_dict": scheduler.state_dict(),
                     "config": model.get_config(),
                     "epoch": epoch,
-                    "val_loss": avg_val_loss,
+                    "val_loss": best_val_loss,
+                    "patience_counter": patience_counter,
                 },
                 str(output_dir / f"checkpoint_epoch{epoch+1}.pth"),
             )
@@ -373,9 +379,12 @@ def train(args):
     torch.save(
         {
             "model_state_dict": model.state_dict(),
+            "optimizer_state_dict": optimizer.state_dict(),
+            "scheduler_state_dict": scheduler.state_dict(),
             "config": model.get_config(),
             "epoch": epoch,
             "val_loss": best_val_loss,
+            "patience_counter": patience_counter,
         },
         str(final_path),
     )
