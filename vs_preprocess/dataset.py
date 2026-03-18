@@ -15,6 +15,24 @@ from typing import Dict, List, Optional, Sequence, Tuple
 
 logger = logging.getLogger(__name__)
 
+# Super-modality mapping: sub-modality directory name -> canonical group
+SUPER_MODALITY_MAP = {
+    "t1+_thick_ax": "T1C",
+    "t1+_thick_cor": "T1C",
+    "t1+_thin": "T1C",
+    "t2_thick": "T2",
+    "t2_thin": "T2",
+}
+
+
+def get_super_modality(sub_modality: str) -> str:
+    """Map a sub-modality directory name to its super-modality group.
+
+    Returns the sub_modality uppercased if not in SUPER_MODALITY_MAP.
+    """
+    return SUPER_MODALITY_MAP.get(sub_modality, sub_modality.upper())
+
+
 # Suffixes that indicate a file is NOT the primary MRI volume
 _EXCLUDE_SUFFIXES = re.compile(
     r"(_seg|_label|_mask|_brain|_stripped|_bet|_synthstrip|_preprocessed|_n4|_bias)",
