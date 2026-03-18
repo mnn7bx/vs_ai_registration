@@ -103,6 +103,7 @@ class LongitudinalPairDataset(Dataset):
             "fixed": fixed,
             "has_gt": torch.tensor(False),
             "gt_params": torch.zeros(9),
+            "pair_type": torch.tensor(0),  # default: same-sub (NCC)
         }
 
 
@@ -166,6 +167,7 @@ class SyntheticPairDataset(Dataset):
             "fixed": fixed,
             "has_gt": torch.tensor(True),
             "gt_params": torch.tensor(inv_params, dtype=torch.float32),
+            "pair_type": torch.tensor(0),  # synthetic treated as same-sub (NCC)
         }
 
     def _sample_params(self) -> np.ndarray:
