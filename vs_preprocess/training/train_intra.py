@@ -23,13 +23,15 @@ from torch.utils.data import DataLoader
 from torch.utils.tensorboard import SummaryWriter
 
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
-from dataset import discover_scans, group_by_patient
+from dataset import discover_scans, group_by_patient, group_by_patient_timepoint
 from affine_utils import warp_volume_torch
 from training.model import AffineRegNet
 from training.dataset import LongitudinalPairDataset, SyntheticPairDataset, CombinedDataset
+from training.multi_pair_dataset import MultiPairDataset, CombinedMultiPairDataset
 from training.augmentations import apply_intensity_augmentation
 from training.losses import (
     get_similarity_loss,
+    ThreeTierLoss,
     identity_regularization,
     determinant_regularization,
     supervised_param_loss,
@@ -48,6 +50,18 @@ def split_by_patient(groups, val_fraction=0.2, seed=42):
     train_groups = {k: v for k, v in groups.items() if k not in val_keys}
     val_groups = {k: v for k, v in groups.items() if k in val_keys}
     return train_groups, val_groups
+
+
+def split_patient_index(index, val_fraction=0.2, seed=42):
+    """Split patient-timepoint index into train/val by patient_id."""
+    rng = np.random.RandomState(seed)
+    pids = sorted(index.keys())
+    rng.shuffle(pids)
+    n_val = max(1, int(len(pids) * val_fraction))
+    val_pids = set(pids[:n_val])
+    train_index = {k: v for k, v in index.items() if k not in val_pids}
+    val_index = {k: v for k, v in index.items() if k in val_pids}
+    return train_index, val_index
 
 
 def get_all_scan_paths(groups):
@@ -97,7 +111,7 @@ def train(args):
     device = "cuda" if torch.cuda.is_available() else "cpu"
     logger.info("Device: %s", device)
 
-    # Discover and group
+    # Discover scans
     modality_filter = cfg.get("modalities", None)
     if args.csv_path:
         from dataset import discover_scans_from_csv
@@ -108,50 +122,137 @@ def train(args):
         )
     else:
         records = discover_scans(Path(args.data_dir), modalities=modality_filter)
-    groups = group_by_patient(records)
-    train_groups, val_groups = split_by_patient(
-        groups,
-        val_fraction=cfg.get("val_fraction", 0.2),
-        seed=cfg.get("split_seed", 42),
-    )
-    logger.info(
-        "Train: %d groups (%d scans), Val: %d groups (%d scans)",
-        len(train_groups), sum(len(v) for v in train_groups.values()),
-        len(val_groups), sum(len(v) for v in val_groups.values()),
-    )
 
-    # Datasets
+    # Common config
     target_size = tuple(cfg.get("image_size", [96, 96, 96]))
     target_spacing = tuple(cfg.get("target_spacing", [1.0, 1.0, 1.0]))
     transform_type = cfg.get("transform_type", "affine")
+    loss_mode = cfg.get("similarity_loss", "ncc")
 
-    train_real = LongitudinalPairDataset(train_groups, target_size, target_spacing)
-    train_synthetic = SyntheticPairDataset(
-        scan_paths=get_all_scan_paths(train_groups),
-        target_size=target_size,
-        target_spacing=target_spacing,
-        max_rotation_deg=cfg.get("max_rotation_deg", 15.0),
-        max_translation=cfg.get("max_translation", 0.1),
-        max_scale_offset=cfg.get("max_scale_offset", 0.05),
-        length=cfg.get("synthetic_length_per_epoch", 1000),
-        transform_type=transform_type,
-    )
-    train_dataset = CombinedDataset(
-        train_real, train_synthetic, real_ratio=cfg.get("real_ratio", 0.5)
-    )
+    if loss_mode == "three_tier":
+        # ── Three-tier mode: patient-timepoint indexing ──────────
+        pt_index = group_by_patient_timepoint(records)
+        train_index, val_index = split_patient_index(
+            pt_index,
+            val_fraction=cfg.get("val_fraction", 0.2),
+            seed=cfg.get("split_seed", 42),
+        )
 
-    val_real = LongitudinalPairDataset(val_groups, target_size, target_spacing)
-    val_synthetic = SyntheticPairDataset(
-        scan_paths=get_all_scan_paths(val_groups),
-        target_size=target_size,
-        target_spacing=target_spacing,
-        max_rotation_deg=cfg.get("max_rotation_deg", 15.0),
-        max_translation=cfg.get("max_translation", 0.1),
-        max_scale_offset=cfg.get("max_scale_offset", 0.05),
-        length=200,
-        transform_type=transform_type,
-    )
-    val_dataset = CombinedDataset(val_real, val_synthetic, real_ratio=0.5)
+        # Log pair counts
+        from training.multi_pair_dataset import PairType, enumerate_pairs
+        all_pairs = enumerate_pairs(pt_index)
+        logger.info(
+            "Three-tier pairs: same_sub=%d, cross_sub=%d, cross_super=%d",
+            sum(1 for p in all_pairs if p[2] == PairType.SAME_SUB),
+            sum(1 for p in all_pairs if p[2] == PairType.CROSS_SUB),
+            sum(1 for p in all_pairs if p[2] == PairType.CROSS_SUPER),
+        )
+
+        train_scan_count = sum(
+            len(mods) for tps in train_index.values() for mods in tps.values()
+        )
+        val_scan_count = sum(
+            len(mods) for tps in val_index.values() for mods in tps.values()
+        )
+        logger.info(
+            "Train: %d patients (%d scans), Val: %d patients (%d scans)",
+            len(train_index), train_scan_count,
+            len(val_index), val_scan_count,
+        )
+
+        train_real = MultiPairDataset(train_index, target_size, target_spacing)
+        train_scan_paths = []
+        for pid, tps in train_index.items():
+            for tp, mods in tps.items():
+                for sub, rec in mods.items():
+                    train_scan_paths.append(rec.volume_path)
+
+        train_synthetic = SyntheticPairDataset(
+            scan_paths=train_scan_paths,
+            target_size=target_size,
+            target_spacing=target_spacing,
+            max_rotation_deg=cfg.get("max_rotation_deg", 15.0),
+            max_translation=cfg.get("max_translation", 0.1),
+            max_scale_offset=cfg.get("max_scale_offset", 0.05),
+            length=cfg.get("synthetic_length_per_epoch", 1000),
+            transform_type=transform_type,
+        )
+        train_dataset = CombinedMultiPairDataset(
+            train_real, train_synthetic,
+            ratios=cfg.get("pair_ratios", [0.25, 0.25, 0.25, 0.25]),
+        )
+
+        val_real = MultiPairDataset(val_index, target_size, target_spacing)
+        val_scan_paths = []
+        for pid, tps in val_index.items():
+            for tp, mods in tps.items():
+                for sub, rec in mods.items():
+                    val_scan_paths.append(rec.volume_path)
+
+        val_synthetic = SyntheticPairDataset(
+            scan_paths=val_scan_paths,
+            target_size=target_size,
+            target_spacing=target_spacing,
+            length=200,
+            transform_type=transform_type,
+        )
+        val_dataset = CombinedMultiPairDataset(
+            val_real, val_synthetic,
+            ratios=cfg.get("pair_ratios", [0.25, 0.25, 0.25, 0.25]),
+        )
+
+        sim_loss_fn = ThreeTierLoss(
+            ncc_kernel_size=cfg.get("ncc_kernel_size", 9),
+            mi_num_bins=cfg.get("mi_num_bins", 32),
+            ema_decay=cfg.get("loss_ema_decay", 0.99),
+        )
+    else:
+        # ── Original single-loss path ────────────────────────────
+        groups = group_by_patient(records)
+        train_groups, val_groups = split_by_patient(
+            groups,
+            val_fraction=cfg.get("val_fraction", 0.2),
+            seed=cfg.get("split_seed", 42),
+        )
+        logger.info(
+            "Train: %d groups (%d scans), Val: %d groups (%d scans)",
+            len(train_groups), sum(len(v) for v in train_groups.values()),
+            len(val_groups), sum(len(v) for v in val_groups.values()),
+        )
+
+        train_real = LongitudinalPairDataset(train_groups, target_size, target_spacing)
+        train_synthetic = SyntheticPairDataset(
+            scan_paths=get_all_scan_paths(train_groups),
+            target_size=target_size,
+            target_spacing=target_spacing,
+            max_rotation_deg=cfg.get("max_rotation_deg", 15.0),
+            max_translation=cfg.get("max_translation", 0.1),
+            max_scale_offset=cfg.get("max_scale_offset", 0.05),
+            length=cfg.get("synthetic_length_per_epoch", 1000),
+            transform_type=transform_type,
+        )
+        train_dataset = CombinedDataset(
+            train_real, train_synthetic, real_ratio=cfg.get("real_ratio", 0.5)
+        )
+
+        val_real = LongitudinalPairDataset(val_groups, target_size, target_spacing)
+        val_synthetic = SyntheticPairDataset(
+            scan_paths=get_all_scan_paths(val_groups),
+            target_size=target_size,
+            target_spacing=target_spacing,
+            max_rotation_deg=cfg.get("max_rotation_deg", 15.0),
+            max_translation=cfg.get("max_translation", 0.1),
+            max_scale_offset=cfg.get("max_scale_offset", 0.05),
+            length=200,
+            transform_type=transform_type,
+        )
+        val_dataset = CombinedDataset(val_real, val_synthetic, real_ratio=0.5)
+
+        sim_loss_fn = get_similarity_loss(
+            loss_mode,
+            num_bins=cfg.get("mi_num_bins", 32),
+            kernel_size=cfg.get("ncc_kernel_size", 9),
+        )
 
     train_loader = DataLoader(
         train_dataset,
@@ -177,13 +278,6 @@ def train(args):
         head_dropout=cfg.get("head_dropout", 0.0),
     ).to(device)
     logger.info("Model params: %d", sum(p.numel() for p in model.parameters()))
-
-    # Loss
-    sim_loss_fn = get_similarity_loss(
-        cfg.get("similarity_loss", "mi"),
-        num_bins=cfg.get("mi_num_bins", 32),
-        kernel_size=cfg.get("ncc_kernel_size", 9),
-    )
 
     # Optimizer & scheduler
     optimizer = torch.optim.Adam(model.parameters(), lr=cfg.get("lr", 1e-4))
@@ -236,6 +330,12 @@ def train(args):
     # Logging
     writer = SummaryWriter(str(output_dir / "tb_logs"))
 
+    def _ckpt_config():
+        """Model config + target_spacing for checkpoint reproducibility."""
+        c = model.get_config()
+        c["target_spacing"] = list(target_spacing)
+        return c
+
     # Training
     max_epochs = cfg.get("max_epochs", 300)
     patience = cfg.get("patience", 30)
@@ -276,7 +376,11 @@ def train(args):
             warped = warp_volume_torch(aug_moving, affine, mode="bilinear")
 
             # Losses
-            loss_sim = lam_mi * sim_loss_fn(warped, fixed) if lam_mi > 0 else torch.tensor(0.0, device=device)
+            if loss_mode == "three_tier":
+                pair_type = batch.get("pair_type", torch.zeros(moving.shape[0], dtype=torch.long))
+                loss_sim = sim_loss_fn(warped, fixed, pair_type.to(device))
+            else:
+                loss_sim = lam_mi * sim_loss_fn(warped, fixed) if lam_mi > 0 else torch.tensor(0.0, device=device)
             loss_id = lambda_id * identity_regularization(params)
             loss_det = lambda_det * determinant_regularization(affine)
 
@@ -308,34 +412,79 @@ def train(args):
             torch.manual_seed(val_seed)
 
         model.eval()
-        val_loss_total = 0.0
-        val_sup_total = 0.0
-        val_n = 0
-        with torch.no_grad():
-            for batch in val_loader:
-                moving = batch["moving"].to(device)
-                fixed = batch["fixed"].to(device)
-                has_gt = batch["has_gt"]
-                gt_params = batch["gt_params"].to(device)
 
-                x = torch.cat([moving, fixed], dim=1)
-                params, affine = model(x)
-                warped = warp_volume_torch(moving, affine)
+        if loss_mode == "three_tier":
+            # ── Three-tier validation: per-type metrics ──────────
+            val_ncc_same = []
+            val_mi_cross_sub = []
+            val_mi_cross_super = []
+            ncc_fn_val = get_similarity_loss("ncc", kernel_size=cfg.get("ncc_kernel_size", 9))
+            mi_fn_val = get_similarity_loss("mi", num_bins=cfg.get("mi_num_bins", 32))
 
-                v_sim = sim_loss_fn(warped, fixed)
-                v_id = lambda_id * identity_regularization(params)
-                v_det = lambda_det * determinant_regularization(affine)
-                v_loss = v_sim + v_id + v_det
+            with torch.no_grad():
+                for batch in val_loader:
+                    moving = batch["moving"].to(device)
+                    fixed = batch["fixed"].to(device)
+                    pair_type = batch.get(
+                        "pair_type", torch.zeros(moving.shape[0], dtype=torch.long)
+                    ).to(device)
 
-                if has_gt.any():
-                    mask = has_gt.to(device)
-                    v_sup = supervised_param_loss(params[mask], gt_params[mask])
-                    val_sup_total += v_sup.item()
+                    x = torch.cat([moving, fixed], dim=1)
+                    params, affine = model(x)
+                    warped = warp_volume_torch(moving, affine)
 
-                val_loss_total += v_loss.item()
-                val_n += 1
+                    for pt_val in [0, 1, 2]:
+                        mask = pair_type == pt_val
+                        if not mask.any():
+                            continue
+                        if pt_val == 0:
+                            val_ncc_same.append(ncc_fn_val(warped[mask], fixed[mask]).item())
+                        elif pt_val == 1:
+                            val_mi_cross_sub.append(mi_fn_val(warped[mask], fixed[mask]).item())
+                        else:
+                            val_mi_cross_super.append(mi_fn_val(warped[mask], fixed[mask]).item())
 
-        avg_val_loss = val_loss_total / max(val_n, 1)
+            avg_ncc = np.mean(val_ncc_same) if val_ncc_same else 0.0
+            avg_mi_cs = np.mean(val_mi_cross_sub) if val_mi_cross_sub else 0.0
+            avg_mi_cx = np.mean(val_mi_cross_super) if val_mi_cross_super else 0.0
+            avg_val_loss = np.mean([avg_ncc, avg_mi_cs, avg_mi_cx])
+
+            writer.add_scalar("val/ncc_same_sub", avg_ncc, epoch)
+            writer.add_scalar("val/mi_cross_sub", avg_mi_cs, epoch)
+            writer.add_scalar("val/mi_cross_super", avg_mi_cx, epoch)
+            writer.add_scalar("val/combined", avg_val_loss, epoch)
+            val_sup_total = 0.0
+            val_n = 1  # avoid div-by-zero in logging below
+        else:
+            # ── Original single-loss validation ──────────────────
+            val_loss_total = 0.0
+            val_sup_total = 0.0
+            val_n = 0
+            with torch.no_grad():
+                for batch in val_loader:
+                    moving = batch["moving"].to(device)
+                    fixed = batch["fixed"].to(device)
+                    has_gt = batch["has_gt"]
+                    gt_params = batch["gt_params"].to(device)
+
+                    x = torch.cat([moving, fixed], dim=1)
+                    params, affine = model(x)
+                    warped = warp_volume_torch(moving, affine)
+
+                    v_sim = sim_loss_fn(warped, fixed)
+                    v_id = lambda_id * identity_regularization(params)
+                    v_det = lambda_det * determinant_regularization(affine)
+                    v_loss = v_sim + v_id + v_det
+
+                    if has_gt.any():
+                        mask = has_gt.to(device)
+                        v_sup = supervised_param_loss(params[mask], gt_params[mask])
+                        val_sup_total += v_sup.item()
+
+                    val_loss_total += v_loss.item()
+                    val_n += 1
+
+            avg_val_loss = val_loss_total / max(val_n, 1)
 
         # Re-seed randomly after val to not affect training
         if val_seed is not None:
@@ -382,7 +531,7 @@ def train(args):
                     "model_state_dict": model.state_dict(),
                     "optimizer_state_dict": optimizer.state_dict(),
                     "scheduler_state_dict": scheduler.state_dict(),
-                    "config": model.get_config(),
+                    "config": _ckpt_config(),
                     "epoch": epoch,
                     "val_loss": best_val_loss,
                     "patience_counter": patience_counter,
@@ -404,7 +553,7 @@ def train(args):
                     "model_state_dict": model.state_dict(),
                     "optimizer_state_dict": optimizer.state_dict(),
                     "scheduler_state_dict": scheduler.state_dict(),
-                    "config": model.get_config(),
+                    "config": _ckpt_config(),
                     "epoch": epoch,
                     "val_loss": best_val_loss,
                     "patience_counter": patience_counter,
