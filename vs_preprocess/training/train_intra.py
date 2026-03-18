@@ -123,6 +123,15 @@ def train(args):
     else:
         records = discover_scans(Path(args.data_dir), modalities=modality_filter)
 
+    # Optional patient limit (for debugging / smoke tests)
+    max_patients = getattr(args, "max_patients", None)
+    if max_patients is not None:
+        all_pids = sorted(set(r.patient_id for r in records))
+        keep_pids = set(all_pids[:max_patients])
+        records = [r for r in records if r.patient_id in keep_pids]
+        logger.info("--max_patients=%d: kept %d scans from %d patients",
+                     max_patients, len(records), len(keep_pids))
+
     # Common config
     target_size = tuple(cfg.get("image_size", [96, 96, 96]))
     target_spacing = tuple(cfg.get("target_spacing", [1.0, 1.0, 1.0]))
@@ -588,6 +597,8 @@ def main():
     parser.add_argument("--csv_path", type=str, default=None, help="CSV file path for data loading")
     parser.add_argument("--data_root", type=str, default=None, help="Data root for CSV path resolution")
     parser.add_argument("--resume", type=str, default=None, help="Path to checkpoint to resume from")
+    parser.add_argument("--max_patients", type=int, default=None,
+                        help="Limit to N patients (for debugging / smoke tests)")
     args = parser.parse_args()
     train(args)
 
