@@ -1,5 +1,9 @@
 """
 GlobalNet inference and affine application for longitudinal alignment.
+
+IMPORTANT: Inference preprocessing MUST match training preprocessing exactly.
+Training uses v2 preprocessing: isotropic resample → overlap-aware crop → normalize.
+See training/dataset.py:LongitudinalPairDataset.__getitem__() for the reference.
 """
 
 from __future__ import annotations
@@ -20,14 +24,20 @@ sys.path.insert(0, str(Path(__file__).resolve().parent))
 from affine_utils import (
     compose_affine,
     decompose_affine,
-    normalized_affine_to_world,
+    normalized_affine_to_world_v2,
     apply_affine_to_volume,
 )
-from preprocessing import preprocess_for_network
+from preprocessing import (
+    load_and_resample_isotropic,
+    center_crop_or_pad,
+    compute_overlap_center,
+)
 
 logger = logging.getLogger(__name__)
 
 NET_INPUT_SHAPE = (96, 96, 96)
+MODEL_TARGET_SPACING = (1.0, 1.0, 1.0)
+MODEL_OUTPUT_SPACING = (1.0, 1.0, 1.0)
 
 
 def load_model(model_path: Path, device: str = "cuda"):
@@ -51,22 +61,29 @@ def load_model(model_path: Path, device: str = "cuda"):
     config = checkpoint["config"]
 
     # Rebuild the SAME AffineRegNet class used during training.
-    # This is critical: train_intra.py saves AffineRegNet.state_dict() which
-    # has keys like "backbone.final.weight". A raw GlobalNet would expect
-    # "final.weight" and fail with missing key errors.
     model = AffineRegNet(
         image_size=tuple(config["image_size"]),
         transform_type=config["transform_type"],
+        head_hidden=config.get("head_hidden", 0),
+        head_dropout=config.get("head_dropout", 0.0),
     )
     model.load_state_dict(checkpoint["model_state_dict"])
     model.to(device)
     model.eval()
 
+    # Update module-level defaults to match the trained model
+    global NET_INPUT_SHAPE, MODEL_TARGET_SPACING, MODEL_OUTPUT_SPACING
+    NET_INPUT_SHAPE = tuple(config["image_size"])
+    MODEL_TARGET_SPACING = tuple(config.get("target_spacing", [1.0, 1.0, 1.0]))
+    MODEL_OUTPUT_SPACING = tuple(config.get("output_spacing", config.get("target_spacing", [1.0, 1.0, 1.0])))
+
     logger.info(
-        "Loaded model from %s (type=%s, params=%d)",
+        "Loaded model from %s (type=%s, params=%d, input=%s, spacing=%s)",
         model_path,
         config["transform_type"],
         config["num_params"],
+        NET_INPUT_SHAPE,
+        MODEL_TARGET_SPACING,
     )
     return model, config
 
@@ -83,8 +100,8 @@ def predict_affine(
 
     Args:
         model: trained AffineRegNet (not raw GlobalNet).
-        moving_tensor: (1, 1, 96, 96, 96) preprocessed moving.
-        fixed_tensor: (1, 1, 96, 96, 96) preprocessed fixed.
+        moving_tensor: (1, 1, D, H, W) preprocessed moving.
+        fixed_tensor: (1, 1, D, H, W) preprocessed fixed.
         transform_type: "affine" or "rigid".
         device: "cuda" or "cpu".
 
@@ -117,6 +134,44 @@ def predict_affine(
     return affine_np, params_np, params_dict
 
 
+def _crop_and_normalize(
+    data: np.ndarray,
+    target_size: Tuple[int, int, int],
+    center=None,
+) -> Tuple[torch.Tensor, Tuple[int, int, int]]:
+    """
+    Center crop/pad a volume and normalize to [0, 1].
+
+    Returns:
+        tensor: (1, 1, D, H, W) float32 tensor.
+        crop_origin: (i, j, k) offset of crop in input coordinates.
+    """
+    cropped, crop_origin = center_crop_or_pad(data, target_size, center=center)
+    vmin, vmax = cropped.min(), cropped.max()
+    if vmax - vmin > 1e-8:
+        cropped = (cropped - vmin) / (vmax - vmin)
+    else:
+        cropped = np.zeros_like(cropped)
+    tensor = torch.from_numpy(cropped).float().unsqueeze(0).unsqueeze(0)
+    return tensor, crop_origin
+
+
+def _compute_crop_affine(
+    resampled_affine: np.ndarray,
+    crop_origin: Tuple[int, int, int],
+) -> np.ndarray:
+    """
+    Compute voxel-to-world affine for a cropped sub-volume.
+
+    The rotation/scale part is unchanged (crop doesn't change voxel size).
+    Only the origin shifts by crop_origin voxels in world coordinates.
+    """
+    crop_affine = resampled_affine.copy()
+    crop_offset = resampled_affine[:3, :3] @ np.array(crop_origin, dtype=np.float64)
+    crop_affine[:3, 3] = resampled_affine[:3, 3] + crop_offset
+    return crop_affine
+
+
 def align_patient_longitudinal(
     patient_records: List,
     model: nn.Module,
@@ -124,17 +179,31 @@ def align_patient_longitudinal(
     transform_type: str = "affine",
     keep_intermediates: bool = True,
     device: str = "cuda",
+    target_spacing: Tuple[float, float, float] = None,
+    output_spacing: Tuple[float, float, float] = None,
 ) -> Dict[str, dict]:
     """
     Align all timepoints of one patient to the baseline.
 
+    Preprocessing matches training exactly:
+        1. Resample both volumes to isotropic spacing
+        2. Compute overlap center between fixed and moving
+        3. Center crop/pad both to NET_INPUT_SHAPE at the overlap center
+        4. Intensity normalize to [0, 1]
+
     Args:
         patient_records: sorted by timepoint, first is baseline. List of ScanRecord.
-        model: trained intra-patient GlobalNet.
+        model: trained intra-patient AffineRegNet.
         output_dir: root output directory.
         transform_type: "affine" or "rigid".
         keep_intermediates: save intermediate NIfTI files.
         device: "cuda" or "cpu".
+        target_spacing: isotropic spacing used during training. Defaults to
+            MODEL_TARGET_SPACING (set by load_model from checkpoint config).
+        output_spacing: if provided, resample moving volume to this spacing
+            before applying the affine warp. Useful for producing higher-res
+            outputs (e.g. 0.5mm) than the training spacing. Defaults to None
+            (warp original-resolution moving volume).
 
     Returns:
         dict mapping timepoint -> {
@@ -145,10 +214,11 @@ def align_patient_longitudinal(
             'warped_nii': nib.Nifti1Image or None (None for baseline),
         }
     """
+    spacing = target_spacing or MODEL_TARGET_SPACING
     baseline = patient_records[0]
 
-    # Cache baseline tensor (used as fixed for all follow-ups)
-    baseline_tensor = preprocess_for_network(baseline.volume_path, NET_INPUT_SHAPE)
+    # ── Load and resample baseline to isotropic (cached for all follow-ups) ──
+    fix_data, fix_affine = load_and_resample_isotropic(baseline.volume_path, spacing)
 
     results: Dict[str, dict] = {}
 
@@ -159,8 +229,7 @@ def align_patient_longitudinal(
     bl_out_dir.mkdir(parents=True, exist_ok=True)
 
     identity_3x4 = np.eye(3, 4, dtype=np.float64)
-    identity_3x4_flat = identity_3x4.copy()
-    np.save(bl_out_dir / f"{baseline.patient_timepoint}_affine.npy", identity_3x4_flat)
+    np.save(bl_out_dir / f"{baseline.patient_timepoint}_affine.npy", identity_3x4)
 
     params_dict_bl = decompose_affine(identity_3x4)
     with open(bl_out_dir / f"{baseline.patient_timepoint}_params.json", "w") as f:
@@ -177,6 +246,7 @@ def align_patient_longitudinal(
     logger.info("  %s = baseline (identity)", baseline.patient_timepoint)
 
     # ── Follow-ups ──
+    # Load full-resolution volumes for the final warping step
     baseline_nii = nib.load(str(baseline.volume_path))
 
     for record in patient_records[1:]:
@@ -185,22 +255,64 @@ def align_patient_longitudinal(
         )
         out_dir.mkdir(parents=True, exist_ok=True)
 
-        # Predict affine
-        moving_tensor = preprocess_for_network(record.volume_path, NET_INPUT_SHAPE)
+        # ── Step 1: Load and resample moving to isotropic ──
+        mov_data, mov_affine = load_and_resample_isotropic(record.volume_path, spacing)
+
+        # ── Step 2: Compute overlap center (matching training exactly) ──
+        # See training/dataset.py:LongitudinalPairDataset.__getitem__()
+        overlap_center_fix = compute_overlap_center(
+            fix_affine, fix_data.shape, mov_affine, mov_data.shape
+        )
+
+        # Convert overlap center to moving-volume voxel coords
+        center_world = (
+            fix_affine[:3, :3] @ np.array(overlap_center_fix, dtype=np.float64)
+            + fix_affine[:3, 3]
+        )
+        inv_mov = np.linalg.inv(mov_affine)
+        overlap_center_mov = inv_mov[:3, :3] @ center_world + inv_mov[:3, 3]
+        overlap_center_mov = tuple(int(round(v)) for v in overlap_center_mov)
+        overlap_center_mov = tuple(
+            max(0, min(c, s - 1))
+            for c, s in zip(overlap_center_mov, mov_data.shape)
+        )
+
+        # ── Step 3: Crop both centered on overlap, normalize ──
+        fix_tensor, fix_crop_origin = _crop_and_normalize(
+            fix_data, NET_INPUT_SHAPE, center=overlap_center_fix
+        )
+        mov_tensor, mov_crop_origin = _crop_and_normalize(
+            mov_data, NET_INPUT_SHAPE, center=overlap_center_mov
+        )
+
+        # ── Step 4: Predict affine ──
         affine_3x4, params_raw, params_dict = predict_affine(
-            model, moving_tensor, baseline_tensor, transform_type, device
+            model, mov_tensor, fix_tensor, transform_type, device
         )
 
-        # Convert to world-space
+        # ── Step 5: Convert to world-space using crop-aware v2 conversion ──
+        fix_crop_affine = _compute_crop_affine(fix_affine, fix_crop_origin)
+        mov_crop_affine = _compute_crop_affine(mov_affine, mov_crop_origin)
+
+        world_affine = normalized_affine_to_world_v2(
+            affine_3x4, mov_crop_affine, fix_crop_affine, NET_INPUT_SHAPE
+        )
+
+        # ── Step 6: Apply to full-resolution volume ──
         moving_nii = nib.load(str(record.volume_path))
-        world_affine = normalized_affine_to_world(
-            affine_3x4, moving_nii, baseline_nii, NET_INPUT_SHAPE
-        )
-
-        # Apply to full-resolution volume
-        warped_nii = apply_affine_to_volume(
-            moving_nii, world_affine, baseline_nii, interpolation="trilinear"
-        )
+        if output_spacing is not None:
+            # Resample moving to output spacing, then apply affine
+            mov_out_data, mov_out_affine = load_and_resample_isotropic(
+                record.volume_path, output_spacing
+            )
+            mov_out_nii = nib.Nifti1Image(mov_out_data, mov_out_affine)
+            warped_nii = apply_affine_to_volume(
+                mov_out_nii, world_affine, baseline_nii, interpolation="trilinear"
+            )
+        else:
+            warped_nii = apply_affine_to_volume(
+                moving_nii, world_affine, baseline_nii, interpolation="trilinear"
+            )
 
         # Save affine and params
         np.save(out_dir / f"{record.patient_timepoint}_affine.npy", affine_3x4)
