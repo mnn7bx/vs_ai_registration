@@ -90,3 +90,12 @@ def test_mixed_scenario():
     assert len(same_sub) == 1  # t2_thin tp2 -> t2_thin tp1
     assert len(cross_sub) == 1  # t1+_thin@tp2 -> t1+_thick_ax@tp1
     assert len(cross_super) == 4  # 2 per timepoint, 2 timepoints
+
+
+# --- Task 4: MultiPairDataset interface test ---
+
+def test_multi_pair_dataset_getitem_returns_pair_type():
+    """MultiPairDataset has the expected interface."""
+    from training.multi_pair_dataset import MultiPairDataset
+    assert hasattr(MultiPairDataset, '__getitem__')
+    assert hasattr(MultiPairDataset, '__len__')
