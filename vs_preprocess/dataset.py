@@ -227,6 +227,24 @@ def group_by_patient(
     return groups
 
 
+def group_by_patient_timepoint(
+    records: List[ScanRecord],
+) -> Dict[str, Dict[str, Dict[str, ScanRecord]]]:
+    """
+    Index scans by patient_id -> timepoint -> sub_modality.
+
+    Returns:
+        {patient_id: {timepoint: {sub_modality: ScanRecord}}}
+    """
+    index: Dict[str, Dict[str, Dict[str, ScanRecord]]] = {}
+    for r in records:
+        pid = r.patient_id
+        tp = r.timepoint
+        sub_mod = r.modality
+        index.setdefault(pid, {}).setdefault(tp, {})[sub_mod] = r
+    return index
+
+
 def discover_scans_from_csv(
     csv_path: Path,
     data_root: Path,
