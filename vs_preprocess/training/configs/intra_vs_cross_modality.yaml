@@ -1,0 +1,56 @@
+# VS cross-modality + longitudinal registration
+# Three-tier loss: NCC (same sub), MI (cross sub/super)
+
+image_size: [128, 128, 128]
+target_spacing: [1.0, 1.0, 1.0]
+output_spacing: [0.5, 0.5, 0.5]
+transform_type: affine
+
+# Data
+pair_ratios: [0.25, 0.25, 0.25, 0.25]
+synthetic_length_per_epoch: 1000
+max_rotation_deg: 15.0
+max_translation: 0.1
+max_scale_offset: 0.05
+
+# Training
+batch_size: 2
+num_workers: 4
+max_epochs: 200
+lr: 1.0e-4
+grad_clip_norm: 1.0
+
+# Scheduler
+scheduler: plateau
+plateau_factor: 0.5
+plateau_patience: 10
+
+# Model head
+head_hidden: 512
+head_dropout: 0.1
+
+# Loss
+similarity_loss: three_tier
+ncc_kernel_size: 9
+mi_num_bins: 32
+loss_ema_decay: 0.99
+lambda_identity: 0.001
+lambda_det: 0.1
+lambda_supervised: 1.0
+
+# Supervised decay
+lambda_supervised_decay: true
+lambda_sup_decay_start: 10
+lambda_sup_decay_end: 30
+
+# Warm-up (for backward compat with lam_mi in single-loss mode)
+warmup_start: 0
+warmup_mi_start: 0
+warmup_mi_end: 10
+
+# Early stopping
+patience: 40
+val_fraction: 0.2
+split_seed: 42
+val_seed: 123
+checkpoint_every_n_epochs: 10
