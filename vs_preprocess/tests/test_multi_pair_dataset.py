@@ -99,3 +99,38 @@ def test_multi_pair_dataset_getitem_returns_pair_type():
     from training.multi_pair_dataset import MultiPairDataset
     assert hasattr(MultiPairDataset, '__getitem__')
     assert hasattr(MultiPairDataset, '__len__')
+
+
+# --- Task 6: CombinedMultiPairDataset tests ---
+
+def test_combined_multi_pair_dataset_length():
+    from training.multi_pair_dataset import CombinedMultiPairDataset, PairType
+    import torch
+
+    class FakeMultiPair:
+        def __init__(self):
+            self.pairs = [
+                (Path("/a"), Path("/b"), PairType.SAME_SUB),
+                (Path("/c"), Path("/d"), PairType.CROSS_SUB),
+                (Path("/e"), Path("/f"), PairType.CROSS_SUPER),
+            ] * 10  # 30 pairs total
+        def __len__(self):
+            return len(self.pairs)
+        def __getitem__(self, idx):
+            return {"pair_type": torch.tensor(0)}
+
+    class FakeSynthetic:
+        length = 100
+        def __len__(self):
+            return self.length
+        def __getitem__(self, idx):
+            return {"pair_type": torch.tensor(0), "has_gt": torch.tensor(True)}
+
+    real = FakeMultiPair()
+    synth = FakeSynthetic()
+    combined = CombinedMultiPairDataset(
+        real_dataset=real,
+        synthetic_dataset=synth,
+        ratios=[0.25, 0.25, 0.25, 0.25],
+    )
+    assert len(combined) > 0

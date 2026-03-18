@@ -167,3 +167,88 @@ class MultiPairDataset(Dataset):
             "has_gt": torch.tensor(False),
             "gt_params": torch.zeros(9),
         }
+
+
+class CombinedMultiPairDataset(Dataset):
+    """
+    Interleaves real multi-pair dataset with synthetic pairs.
+
+    Balances pair types according to configurable ratios:
+        ratios[0]: same-sub longitudinal
+        ratios[1]: cross-sub longitudinal
+        ratios[2]: cross-super intra-timepoint
+        ratios[3]: synthetic
+    """
+
+    def __init__(
+        self,
+        real_dataset: MultiPairDataset,
+        synthetic_dataset,
+        ratios: List[float] = None,
+    ):
+        if ratios is None:
+            ratios = [0.25, 0.25, 0.25, 0.25]
+        assert len(ratios) == 4
+        total_ratio = sum(ratios)
+        ratios = [r / total_ratio for r in ratios]
+
+        # Separate real pairs by type
+        self.same_sub_indices = []
+        self.cross_sub_indices = []
+        self.cross_super_indices = []
+        for i, (_, _, pt) in enumerate(real_dataset.pairs):
+            if pt == PairType.SAME_SUB:
+                self.same_sub_indices.append(i)
+            elif pt == PairType.CROSS_SUB:
+                self.cross_sub_indices.append(i)
+            elif pt == PairType.CROSS_SUPER:
+                self.cross_super_indices.append(i)
+
+        self.real_dataset = real_dataset
+        self.synthetic_dataset = synthetic_dataset
+
+        # Compute counts: use the largest real bucket to set epoch size
+        real_counts = [
+            len(self.same_sub_indices),
+            len(self.cross_sub_indices),
+            len(self.cross_super_indices),
+        ]
+        max_bucket = 0
+        for i, count in enumerate(real_counts):
+            if ratios[i] > 0 and count > 0:
+                epoch_from_bucket = int(count / ratios[i])
+                max_bucket = max(max_bucket, epoch_from_bucket)
+
+        if max_bucket == 0:
+            max_bucket = len(synthetic_dataset)
+
+        self.n_same_sub = int(max_bucket * ratios[0])
+        self.n_cross_sub = int(max_bucket * ratios[1])
+        self.n_cross_super = int(max_bucket * ratios[2])
+        self.n_synthetic = int(max_bucket * ratios[3])
+
+        self.synthetic_dataset.length = max(self.n_synthetic, 1)
+
+    def __len__(self):
+        return self.n_same_sub + self.n_cross_sub + self.n_cross_super + self.n_synthetic
+
+    def __getitem__(self, idx):
+        if idx < self.n_same_sub:
+            real_idx = self.same_sub_indices[idx % len(self.same_sub_indices)] if self.same_sub_indices else 0
+            return self.real_dataset[real_idx]
+        idx -= self.n_same_sub
+
+        if idx < self.n_cross_sub:
+            real_idx = self.cross_sub_indices[idx % len(self.cross_sub_indices)] if self.cross_sub_indices else 0
+            return self.real_dataset[real_idx]
+        idx -= self.n_cross_sub
+
+        if idx < self.n_cross_super:
+            real_idx = self.cross_super_indices[idx % len(self.cross_super_indices)] if self.cross_super_indices else 0
+            return self.real_dataset[real_idx]
+        idx -= self.n_cross_super
+
+        # Synthetic
+        sample = self.synthetic_dataset[idx % len(self.synthetic_dataset)]
+        sample["pair_type"] = torch.tensor(int(PairType.SAME_SUB))  # synthetic = NCC
+        return sample
